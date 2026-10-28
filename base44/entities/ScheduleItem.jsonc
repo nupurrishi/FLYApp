@@ -1,0 +1,101 @@
+{
+  "name": "ScheduleItem",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "start_time": {
+      "type": "string"
+    },
+    "end_time": {
+      "type": "string"
+    },
+    "timezone": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "call_time",
+        "rehearsal",
+        "fitting",
+        "hair_makeup",
+        "wardrobe",
+        "runway",
+        "break",
+        "meeting",
+        "other"
+      ],
+      "default": "other"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "upcoming",
+        "in_progress",
+        "completed",
+        "cancelled"
+      ],
+      "default": "upcoming"
+    },
+    "instructions": {
+      "type": "string"
+    },
+    "assigned_emails": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "audience": {
+      "type": "string",
+      "enum": [
+        "all",
+        "models",
+        "designers"
+      ],
+      "default": "all"
+    }
+  },
+  "required": [
+    "event_id",
+    "title",
+    "date"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

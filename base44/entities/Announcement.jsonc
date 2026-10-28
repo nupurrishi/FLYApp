@@ -1,0 +1,58 @@
+{
+  "name": "Announcement",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "audience": {
+      "type": "string",
+      "enum": [
+        "all",
+        "models",
+        "designers"
+      ],
+      "default": "all"
+    },
+    "pinned": {
+      "type": "boolean",
+      "default": false
+    },
+    "author_name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "title",
+    "message"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

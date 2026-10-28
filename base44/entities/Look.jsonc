@@ -1,0 +1,84 @@
+{
+  "name": "Look",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "collection_id": {
+      "type": "string"
+    },
+    "designer_email": {
+      "type": "string"
+    },
+    "designer_name": {
+      "type": "string"
+    },
+    "number": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "type": "string"
+    },
+    "accessories": {
+      "type": "string"
+    },
+    "footwear": {
+      "type": "string"
+    },
+    "styling_instructions": {
+      "type": "string"
+    },
+    "fitting_notes": {
+      "type": "string"
+    },
+    "prep_status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "in_progress",
+        "ready",
+        "missing"
+      ],
+      "default": "draft"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "name"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

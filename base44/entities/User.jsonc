@@ -1,0 +1,51 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "phone": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "avatar_url": {
+      "type": "string"
+    },
+    "bio": {
+      "type": "string"
+    },
+    "brand_name": {
+      "type": "string"
+    },
+    "website": {
+      "type": "string"
+    },
+    "instagram": {
+      "type": "string"
+    },
+    "height": {
+      "type": "string"
+    },
+    "bust": {
+      "type": "string"
+    },
+    "waist": {
+      "type": "string"
+    },
+    "hips": {
+      "type": "string"
+    },
+    "shoe_size": {
+      "type": "string"
+    },
+    "hair_color": {
+      "type": "string"
+    },
+    "eye_color": {
+      "type": "string"
+    },
+    "emergency_contact": {
+      "type": "string"
+    }
+  }
+}

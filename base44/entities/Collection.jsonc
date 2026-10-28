@@ -1,0 +1,62 @@
+{
+  "name": "Collection",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "designer_email": {
+      "type": "string"
+    },
+    "designer_name": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "season": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "cover_image": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "in_progress",
+        "ready"
+      ],
+      "default": "draft"
+    }
+  },
+  "required": [
+    "event_id",
+    "name"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

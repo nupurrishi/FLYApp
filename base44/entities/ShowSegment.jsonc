@@ -1,0 +1,71 @@
+{
+  "name": "ShowSegment",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "position": {
+      "type": "number",
+      "default": 1
+    },
+    "title": {
+      "type": "string"
+    },
+    "designer_name": {
+      "type": "string"
+    },
+    "collection_name": {
+      "type": "string"
+    },
+    "model_emails": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "ready",
+        "on_deck",
+        "on_stage",
+        "completed"
+      ],
+      "default": "pending"
+    },
+    "duration_min": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "title"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
