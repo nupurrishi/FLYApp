@@ -36,6 +36,39 @@ until a human installs this source and redeploys it. **No production app data is
    for real user authorization.
 8. Open the deployed URL without parameters. It should still return the FLYApp health JSON.
 
+## Connect new-event creation in the Codespaces preview
+
+The app now has a **server-only, best-effort mirror** for newly created events. Base44 remains
+the primary database and login provider; event creation still goes through the existing
+admin authorization check. The mirror sends only event name, start date, venue/city, and
+status to the test spreadsheet. It does not migrate existing events or update/delete rows.
+
+Set these environment variables in the same terminal session used to start the Codespaces
+preview. Do not add real values to .env, commit them, or use VITE_ prefixes:
+
+- FLYAPP_SHEETS_WEB_APP_URL: deployed Apps Script Web App URL ending in /exec.
+- FLYAPP_API_KEY: the secret already set in Apps Script Script Properties.
+
+For a temporary local test, stop the dev server with Ctrl+C, then run the following commands
+in the Codespaces terminal. The secret is entered silently and is not part of the command
+history:
+
+```bash
+read -r -p "Apps Script /exec URL: " FLYAPP_SHEETS_WEB_APP_URL
+read -r -s -p "Apps Script API key: " FLYAPP_API_KEY
+printf '\n'
+export FLYAPP_SHEETS_WEB_APP_URL FLYAPP_API_KEY
+npm run dev
+```
+
+Create a new test event while signed in as an app admin, then check the private test
+spreadsheet's Events tab. If the app reports event creation succeeded but no row appears,
+check the Codespaces server terminal for a [FLYApp] Google Sheets event mirror failed
+message. If either environment variable is missing, the mirror is intentionally skipped.
+
+This is a development prototype, not a production migration. Keep Base44 login and data
+available. Do not merge this branch or rely on Sheets as the source of truth until the
+end-to-end test and deployment configuration have been reviewed.
 ## API actions currently implemented in this script
 
 - Apps Script editor function `createSmokeTestEvent`: adds one clearly labelled test row to `Events`.
