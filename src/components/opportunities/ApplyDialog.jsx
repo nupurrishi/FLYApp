@@ -75,4 +75,3 @@ export default function ApplyDialog({ opportunity, open, onOpenChange }) {
     </Dialog>
   );
 }
-}
