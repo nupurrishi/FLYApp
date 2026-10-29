@@ -47,6 +47,19 @@ export const saveEvent = createServerFn({ method: "POST" })
     const record = id
       ? await service.entities.Event.update(id, fields)
       : await service.entities.Event.create(fields);
+
+    // Base44 remains the primary store. Mirror newly created events to the
+    // private Google Sheets test database when server secrets are configured.
+    // A Sheets outage must not undo the save or interfere with sign-in.
+    if (!id) {
+      try {
+        const { mirrorEventToGoogleSheets } = await import("@/lib/google-sheets.server");
+        await mirrorEventToGoogleSheets(record);
+      } catch (error) {
+        console.error("[FLYApp] Google Sheets event mirror failed:", error?.message || error);
+      }
+    }
+
     await logAction(service, user, id ? "Updated event" : "Created event", {
       eventId: record.id,
       target: record.name,
