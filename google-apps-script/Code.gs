@@ -22,10 +22,41 @@ const ENTITIES={
 };
 function setupFlyAppSheets(){
  const ss=ss_();
- Object.values(ENTITIES).forEach(c=>{let s=ss.getSheetByName(c[0]);if(!s)s=ss.insertSheet(c[0]);const n=s.getLastColumn();const old=n?s.getRange(1,1,1,n).getValues()[0].map(String).filter(Boolean):[];const wanted=[c[1],...c[2].split(" ")];if(!old.length){s.getRange(1,1,1,wanted.length).setValues([wanted]);s.setFrozenRows(1)}else{const missing=wanted.filter(h=>!old.includes(h));if(missing.length)s.getRange(1,old.length+1,1,missing.length).setValues([missing])}});
- const legacy={Users:["user_id","email","full_name","role","status","created_at"],Events:["event_id","event_name","event_date","location","status","created_at"],Schedules:["schedule_id","event_id","title","start_time","end_time","location","notes"],Assignments:["assignment_id","event_id","schedule_id","user_id","role","status"]};
- Object.entries(legacy).forEach(([name,headers])=>{let s=ss.getSheetByName(name);if(!s)s=ss.insertSheet(name);if(!s.getLastRow()){s.getRange(1,1,1,headers.length).setValues([headers]);s.setFrozenRows(1)}});
- return {ok:true,message:"FLYApp entity tabs and headers ready; existing rows preserved."};
+ // Ensure the expanded schema AND legacy compatibility columns exist on the same tabs.
+ // Existing headers and data are preserved; missing headers are appended, never overwritten.
+ Object.values(ENTITIES).forEach(c=>{
+   ensureHeaders_(ss,c[0],[c[1],...c[2].split(" ")]);
+ });
+ const legacy={
+   Users:["user_id","email","full_name","role","status","created_at"],
+   Events:["event_id","event_name","event_date","location","status","created_at"],
+   Schedules:["schedule_id","event_id","title","start_time","end_time","location","notes"],
+   Assignments:["assignment_id","event_id","schedule_id","user_id","role","status"]
+ };
+ Object.entries(legacy).forEach(([name,headers])=>ensureHeaders_(ss,name,headers));
+ return {
+   ok:true,
+   message:"FLYApp entity tabs and compatibility headers are ready; existing rows and headers were preserved.",
+   tabs:Object.keys(ENTITIES).map(k=>ENTITIES[k][0]).concat(Object.keys(legacy).filter(n=>!Object.values(ENTITIES).some(c=>c[0]===n)))
+ };
+}
+function ensureHeaders_(ss,name,wanted){
+ let sheet=ss.getSheetByName(name);
+ if(!sheet) sheet=ss.insertSheet(name);
+ const lastColumn=sheet.getLastColumn();
+ const existing=lastColumn>0
+   ? sheet.getRange(1,1,1,lastColumn).getValues()[0].map(v=>String(v||"").trim())
+   : [];
+ if(existing.length===0||existing.every(v=>!v)){
+   sheet.getRange(1,1,1,wanted.length).setValues([wanted]);
+   sheet.setFrozenRows(1);
+   return;
+ }
+ const missing=wanted.filter(header=>!existing.includes(header));
+ if(missing.length){
+   sheet.getRange(1,lastColumn+1,1,missing.length).setValues([missing]);
+ }
+ if(sheet.getFrozenRows()===0) sheet.setFrozenRows(1);
 }
 function doGet(e){const p=e&&e.parameter||{},a=String(p.action||"health");if(a==="health")return out_({app:"FLYApp",status:"connected"});if(!auth_(p.key))return out_({ok:false,error:"Unauthorized"});try{
  if(a==="listEvents")return out_({ok:true,data:listLegacyEvents_()});
