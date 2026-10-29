@@ -4,6 +4,7 @@ import {
   Clock3,
   Compass,
   Images,
+  ListChecks,
   LayoutDashboard,
   Radio,
   ShieldCheck,
@@ -22,6 +23,7 @@ export const NAV = [
   { to: "/opportunities", label: "Opportunities", icon: Compass },
   { to: "/profile", label: "Profile", icon: User },
   { to: "/admin", label: "Admin Management", icon: ShieldCheck, adminOnly: true },
+  { to: "/backstage", label: "Backstage Tasks", icon: ListChecks, roleOnly: "backstage_manager" },
 ];
 
 export const isActive = (pathname, to) =>

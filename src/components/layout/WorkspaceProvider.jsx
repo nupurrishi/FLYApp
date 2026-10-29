@@ -34,13 +34,17 @@ export function WorkspaceProvider({ children }) {
   const value = useMemo(() => {
     const events = data?.events || [];
     const activeEvent = events.find((e) => e.id === eventId) || null;
+    const membership = (data?.memberships || []).find(
+      (item) => item.event_id === activeEvent?.id && item.status !== "removed",
+    );
+    const role = data?.isAdmin ? "admin" : membership?.role || data?.role || "model";
     const selectEvent = (id) => {
       setEventId(id);
       window.localStorage.setItem(STORAGE_KEY, id);
     };
     return {
       user: data?.user || null,
-      role: data?.role || "model",
+      role,
       isAdmin: !!data?.isAdmin,
       memberships: data?.memberships || [],
       events,

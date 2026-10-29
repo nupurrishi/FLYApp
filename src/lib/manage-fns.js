@@ -5,17 +5,23 @@ import {
   adminEmails,
   eventAudience,
   isAdmin,
+  membershipFor,
   logAction,
   notify,
   requireAdmin,
+  requireEventMember,
   requireDesignerOrAdmin,
   requireEventManager,
+  requireStageManager,
+  requireBackstageManager,
+  requireOperationsManager,
   requireUser,
 } from "@/lib/guard.server";
 
 const opt = (max) => z.string().max(max).optional();
 const email = z
   .string()
+  .email()
   .min(3)
   .max(200)
   .transform((value) => value.trim().toLowerCase());
@@ -29,8 +35,8 @@ const eventSchema = z.object({
   tagline: opt(200),
   description: opt(4000),
   cover_image: opt(2000),
-  start_date: z.string().min(1),
-  end_date: opt(20),
+  start_date: z.iso.date(),
+  end_date: z.iso.date().optional(),
   timezone: z.string().min(1).max(60),
   venue_name: opt(200),
   venue_address: opt(400),
@@ -62,7 +68,7 @@ export const setEventStatus = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireEventManager(context, data.id);
+    const { user, service } = await requireAdmin(context);
     const event = await service.entities.Event.update(data.id, { status: data.status });
     await logAction(service, user, `Event marked ${data.status}`, {
       eventId: data.id,
@@ -84,7 +90,7 @@ export const setEventStatus = createServerFn({ method: "POST" })
 export const setShowStatus = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string().min(1), show_status: z.enum(["idle", "live", "ended"]) }))
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireEventManager(context, data.id);
+    const { user, service } = await requireStageManager(context, data.id);
     const event = await service.entities.Event.update(data.id, { show_status: data.show_status });
     await logAction(service, user, `Show set to ${data.show_status}`, { eventId: data.id, target: event.name });
     if (data.show_status === "live") {
@@ -132,7 +138,7 @@ export const saveMember = createServerFn({ method: "POST" })
       event_id: z.string().min(1),
       user_email: email,
       full_name: opt(160),
-      role: z.enum(["model", "designer"]),
+      role: z.enum(["model", "designer", "stage_manager", "backstage_manager"]),
       phone: opt(40),
       status: z.enum(["invited", "active", "removed"]).optional(),
       notes: opt(1000),
@@ -141,6 +147,19 @@ export const saveMember = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { user, service } = await requireEventManager(context, data.event_id);
     const event = await service.entities.Event.get(data.event_id);
+    const existing = asItems(await service.entities.EventMember.filter({
+      event_id: data.event_id,
+      user_email: data.user_email,
+    }));
+    if (existing.some((row) => row.id !== data.id && row.status !== "removed")) {
+      throw Object.assign(new Error("This person is already on the event team"), { status: 409 });
+    }
+    if (data.id) {
+      const previous = await service.entities.EventMember.get(data.id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id) {
+        throw Object.assign(new Error("Team member not found for this event"), { status: 404 });
+      }
+    }
     const users = asItems(await service.entities.User.list());
     const matched = users.find((u) => (u.email || "").toLowerCase() === data.user_email);
     const payload = {
@@ -217,7 +236,7 @@ const scheduleSchema = z.object({
   event_id: z.string().min(1),
   title: z.string().min(1).max(160),
   description: opt(2000),
-  date: z.string().min(1),
+  date: z.iso.date(),
   start_time: opt(10),
   end_time: opt(10),
   timezone: z.string().min(1).max(60),
@@ -234,8 +253,23 @@ const scheduleSchema = z.object({
 export const saveScheduleItem = createServerFn({ method: "POST" })
   .validator(scheduleSchema)
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireEventManager(context, data.event_id);
+    const { user, service } = await requireStageManager(context, data.event_id);
     const { id, ...fields } = data;
+    const assignedEmails = [...new Set((fields.assigned_emails || []).map((value) => value.trim().toLowerCase()))];
+    if (assignedEmails.length) {
+      const members = asItems(await service.entities.EventMember.filter({ event_id: data.event_id }));
+      const allowedEmails = new Set(members.filter((member) => member.status !== "removed").map((member) => member.user_email?.toLowerCase()));
+      if (assignedEmails.some((emailAddress) => !allowedEmails.has(emailAddress))) {
+        throw Object.assign(new Error("Assigned people must belong to this event"), { status: 400 });
+      }
+      fields.assigned_emails = assignedEmails;
+    }
+    if (id) {
+      const previous = await service.entities.ScheduleItem.get(id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id) {
+        throw Object.assign(new Error("Schedule item not found for this event"), { status: 404 });
+      }
+    }
     const record = id
       ? await service.entities.ScheduleItem.update(id, fields)
       : await service.entities.ScheduleItem.create(fields);
@@ -264,22 +298,22 @@ export const saveScheduleItem = createServerFn({ method: "POST" })
 export const setScheduleStatus = createServerFn({ method: "POST" })
   .validator(idOnly.extend({ status: z.enum(["upcoming", "in_progress", "completed", "cancelled"]) }))
   .handler(async ({ data, context }) => {
-    const { service } = await requireAdmin(context);
+    const { service: lookup } = await requireUser(context);
+    const item = await lookup.entities.ScheduleItem.get(data.id).catch(() => null);
+    if (!item) throw Object.assign(new Error("Schedule item not found"), { status: 404 });
+    const { service } = await requireStageManager(context, item.event_id);
     return service.entities.ScheduleItem.update(data.id, { status: data.status });
   });
 
 export const deleteScheduleItem = createServerFn({ method: "POST" })
   .validator(idOnly)
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireAdmin(context);
-    const item = await service.entities.ScheduleItem.get(data.id).catch(() => null);
+    const { service: lookup } = await requireUser(context);
+    const item = await lookup.entities.ScheduleItem.get(data.id).catch(() => null);
+    if (!item) return { ok: true };
+    const { user, service } = await requireStageManager(context, item.event_id);
     await service.entities.ScheduleItem.delete(data.id);
-    if (item) {
-      await logAction(service, user, "Deleted schedule item", {
-        eventId: item.event_id,
-        target: item.title,
-      });
-    }
+    await logAction(service, user, "Deleted schedule item", { eventId: item.event_id, target: item.title });
     return { ok: true };
   });
 
@@ -300,8 +334,18 @@ const collectionSchema = z.object({
 export const saveCollection = createServerFn({ method: "POST" })
   .validator(collectionSchema)
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireDesignerOrAdmin(context, data.designer_email);
+    const { user, service } = await requireEventMember(context, data.event_id, ["designer"]);
+    await requireDesignerOrAdmin(context, data.designer_email);
+    if (!isAdmin(user) && data.designer_email.toLowerCase() !== user.email?.toLowerCase()) {
+      throw Object.assign(new Error("You may only manage your own collections"), { status: 403 });
+    }
     const { id, ...fields } = data;
+    if (id) {
+      const previous = await service.entities.Collection.get(id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id || (!isAdmin(user) && previous.designer_email?.toLowerCase() !== user.email?.toLowerCase())) {
+        throw Object.assign(new Error("Collection not found for this event"), { status: 404 });
+      }
+    }
     const record = id
       ? await service.entities.Collection.update(id, fields)
       : await service.entities.Collection.create(fields);
@@ -315,15 +359,23 @@ export const saveCollection = createServerFn({ method: "POST" })
 export const deleteCollection = createServerFn({ method: "POST" })
   .validator(idOnly)
   .handler(async ({ data, context }) => {
-    const collection = await (async () => {
-      const { service } = await requireUser(context);
-      return service.entities.Collection.get(data.id).catch(() => null);
-    })();
+    const { service: lookup } = await requireUser(context);
+    const collection = await lookup.entities.Collection.get(data.id).catch(() => null);
     if (!collection) return { ok: true };
-    const { service } = await requireDesignerOrAdmin(context, collection.designer_email);
-    const looks = asItems(await service.entities.Look.filter({ collection_id: data.id }));
-    await Promise.all(looks.map((l) => service.entities.LookAssignment.deleteMany({ look_id: l.id })));
-    await service.entities.Look.deleteMany({ collection_id: data.id });
+    const { user, service } = await requireEventMember(context, collection.event_id, ["designer"]);
+    await requireDesignerOrAdmin(context, collection.designer_email);
+    if (!isAdmin(user) && collection.designer_email?.toLowerCase() !== user.email?.toLowerCase()) {
+      throw Object.assign(new Error("You may only manage your own collections"), { status: 403 });
+    }
+    const looks = asItems(await service.entities.Look.filter({
+      collection_id: data.id,
+      event_id: collection.event_id,
+    }));
+    await Promise.all(looks.map((l) => service.entities.LookAssignment.deleteMany({
+      look_id: l.id,
+      event_id: collection.event_id,
+    })));
+    await service.entities.Look.deleteMany({ collection_id: data.id, event_id: collection.event_id });
     await service.entities.Collection.delete(data.id);
     return { ok: true };
   });
@@ -349,8 +401,24 @@ const lookSchema = z.object({
 export const saveLook = createServerFn({ method: "POST" })
   .validator(lookSchema)
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireDesignerOrAdmin(context, data.designer_email);
+    const { user, service } = await requireEventMember(context, data.event_id, ["designer"]);
+    await requireDesignerOrAdmin(context, data.designer_email);
+    if (!isAdmin(user) && data.designer_email.toLowerCase() !== user.email?.toLowerCase()) {
+      throw Object.assign(new Error("You may only manage your own looks"), { status: 403 });
+    }
     const { id, ...fields } = data;
+    if (id) {
+      const previous = await service.entities.Look.get(id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id || (!isAdmin(user) && previous.designer_email?.toLowerCase() !== user.email?.toLowerCase())) {
+        throw Object.assign(new Error("Look not found for this event"), { status: 404 });
+      }
+    }
+    if (fields.collection_id) {
+      const collection = await service.entities.Collection.get(fields.collection_id).catch(() => null);
+      if (!collection || collection.event_id !== data.event_id || (!isAdmin(user) && collection.designer_email?.toLowerCase() !== user.email?.toLowerCase())) {
+        throw Object.assign(new Error("Choose a collection you can access in this event"), { status: 400 });
+      }
+    }
     const record = id
       ? await service.entities.Look.update(id, fields)
       : await service.entities.Look.create(fields);
@@ -367,8 +435,12 @@ export const deleteLook = createServerFn({ method: "POST" })
     const { service: peek } = await requireUser(context);
     const look = await peek.entities.Look.get(data.id).catch(() => null);
     if (!look) return { ok: true };
-    const { service } = await requireDesignerOrAdmin(context, look.designer_email);
-    await service.entities.LookAssignment.deleteMany({ look_id: data.id });
+    const { user, service } = await requireEventMember(context, look.event_id, ["designer"]);
+    await requireDesignerOrAdmin(context, look.designer_email);
+    if (!isAdmin(user) && look.designer_email?.toLowerCase() !== user.email?.toLowerCase()) {
+      throw Object.assign(new Error("You may only manage your own looks"), { status: 403 });
+    }
+    await service.entities.LookAssignment.deleteMany({ look_id: data.id, event_id: look.event_id });
     await service.entities.Look.delete(data.id);
     return { ok: true };
   });
@@ -388,8 +460,33 @@ export const saveAssignment = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { service: peek } = await requireUser(context);
     const look = await peek.entities.Look.get(data.look_id);
-    const { user, service } = await requireDesignerOrAdmin(context, look.designer_email);
+    if (look.event_id !== data.event_id) throw Object.assign(new Error("Look not found for this event"), { status: 404 });
+    const { user, service, membership } = await requireEventMember(context, data.event_id);
+    if (!isAdmin(user) && membership?.role !== "backstage_manager") {
+      await requireDesignerOrAdmin(context, look.designer_email);
+      if (look.designer_email?.toLowerCase() !== user.email?.toLowerCase()) {
+        throw Object.assign(new Error("You may only assign models to your own looks"), { status: 403 });
+      }
+    }
+    const modelMembership = await membershipFor(service, { email: data.model_email }, data.event_id);
+    if (!modelMembership || modelMembership.role !== "model") {
+      throw Object.assign(new Error("Choose a model who belongs to this event"), { status: 400 });
+    }
     const { id, ...fields } = data;
+    const duplicates = asItems(await service.entities.LookAssignment.filter({
+      event_id: data.event_id,
+      look_id: data.look_id,
+      model_email: data.model_email,
+    }));
+    if (duplicates.some((row) => row.id !== id)) {
+      throw Object.assign(new Error("This model already has this look assigned"), { status: 409 });
+    }
+    if (id) {
+      const previous = await service.entities.LookAssignment.get(id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id || previous.look_id !== data.look_id) {
+        throw Object.assign(new Error("Look assignment not found for this event"), { status: 404 });
+      }
+    }
     const record = id
       ? await service.entities.LookAssignment.update(id, fields)
       : await service.entities.LookAssignment.create(fields);
@@ -416,7 +513,14 @@ export const deleteAssignment = createServerFn({ method: "POST" })
     const assignment = await peek.entities.LookAssignment.get(data.id).catch(() => null);
     if (!assignment) return { ok: true };
     const look = await peek.entities.Look.get(assignment.look_id).catch(() => null);
-    const { service } = await requireDesignerOrAdmin(context, look?.designer_email);
+    if (!look || look.event_id !== assignment.event_id) throw Object.assign(new Error("Look assignment not found"), { status: 404 });
+    const { user, service, membership } = await requireEventMember(context, assignment.event_id);
+    if (!isAdmin(user) && membership?.role !== "backstage_manager") {
+      await requireDesignerOrAdmin(context, look.designer_email);
+      if (look.designer_email?.toLowerCase() !== user.email?.toLowerCase()) {
+        throw Object.assign(new Error("You may only manage your own look assignments"), { status: 403 });
+      }
+    }
     await service.entities.LookAssignment.delete(data.id);
     return { ok: true };
   });
@@ -424,14 +528,18 @@ export const deleteAssignment = createServerFn({ method: "POST" })
 export const setAssignmentStatus = createServerFn({ method: "POST" })
   .validator(idOnly.extend({ status: z.enum(["assigned", "confirmed", "fitted"]) }))
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireUser(context);
-    const assignment = await service.entities.LookAssignment.get(data.id);
-    const look = await service.entities.Look.get(assignment.look_id).catch(() => null);
-    const allowed =
-      isAdmin(user) ||
-      assignment.model_email === user.email ||
-      look?.designer_email === user.email;
-    if (!allowed) throw Object.assign(new Error("Forbidden"), { status: 403 });
+    const { user, service: lookup } = await requireUser(context);
+    const assignment = await lookup.entities.LookAssignment.get(data.id).catch(() => null);
+    if (!assignment) throw Object.assign(new Error("Look assignment not found"), { status: 404 });
+    const look = await lookup.entities.Look.get(assignment.look_id).catch(() => null);
+    if (!look || look.event_id !== assignment.event_id) throw Object.assign(new Error("Look assignment not found"), { status: 404 });
+    const { membership } = await requireEventMember(context, assignment.event_id);
+    const allowed = isAdmin(user) ||
+      (membership?.role === "model" && assignment.model_email?.toLowerCase() === user.email?.toLowerCase()) ||
+      (membership?.role === "designer" && look.designer_email?.toLowerCase() === user.email?.toLowerCase()) ||
+      membership?.role === "backstage_manager";
+    if (!allowed) throw Object.assign(new Error("You do not have permission to update this assignment"), { status: 403 });
+    const { service } = await requireEventMember(context, assignment.event_id);
     return service.entities.LookAssignment.update(data.id, { status: data.status });
   });
 
@@ -442,7 +550,7 @@ const hmaSchema = z.object({
   event_id: z.string().min(1),
   model_email: email,
   model_name: opt(160),
-  date: z.string().min(1),
+  date: z.iso.date(),
   start_time: opt(10),
   end_time: opt(10),
   station: opt(120),
@@ -456,8 +564,18 @@ const hmaSchema = z.object({
 export const saveHairMakeup = createServerFn({ method: "POST" })
   .validator(hmaSchema)
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireEventManager(context, data.event_id);
+    const { user, service } = await requireBackstageManager(context, data.event_id);
     const { id, ...fields } = data;
+    const modelMembership = await membershipFor(service, { email: data.model_email }, data.event_id);
+    if (!modelMembership || modelMembership.role !== "model") {
+      throw Object.assign(new Error("Choose a model who belongs to this event"), { status: 400 });
+    }
+    if (id) {
+      const previous = await service.entities.HairMakeup.get(id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id) {
+        throw Object.assign(new Error("Appointment not found for this event"), { status: 404 });
+      }
+    }
     const record = id
       ? await service.entities.HairMakeup.update(id, fields)
       : await service.entities.HairMakeup.create(fields);
@@ -477,14 +595,20 @@ export const saveHairMakeup = createServerFn({ method: "POST" })
 export const setHairMakeupStatus = createServerFn({ method: "POST" })
   .validator(idOnly.extend({ status: z.enum(["not_started", "in_progress", "completed"]) }))
   .handler(async ({ data, context }) => {
-    const { service } = await requireEventManager(context, data.id);
+    const { service: lookup } = await requireUser(context);
+    const appointment = await lookup.entities.HairMakeup.get(data.id).catch(() => null);
+    if (!appointment) throw Object.assign(new Error("Appointment not found"), { status: 404 });
+    const { service } = await requireBackstageManager(context, appointment.event_id);
     return service.entities.HairMakeup.update(data.id, { status: data.status });
   });
 
 export const deleteHairMakeup = createServerFn({ method: "POST" })
   .validator(idOnly)
   .handler(async ({ data, context }) => {
-    const { service } = await requireAdmin(context);
+    const { service: lookup } = await requireUser(context);
+    const appointment = await lookup.entities.HairMakeup.get(data.id).catch(() => null);
+    if (!appointment) return { ok: true };
+    const { service } = await requireBackstageManager(context, appointment.event_id);
     await service.entities.HairMakeup.delete(data.id);
     return { ok: true };
   });
@@ -494,21 +618,36 @@ export const deleteHairMakeup = createServerFn({ method: "POST" })
 const segmentSchema = z.object({
   id: z.string().optional(),
   event_id: z.string().min(1),
-  position: z.number().optional(),
+  position: z.number().int().min(1).max(500).optional(),
   title: z.string().min(1).max(160),
   designer_name: opt(160),
   collection_name: opt(160),
   model_emails: z.array(z.string().max(200)).max(60).optional(),
   status: z.enum(["pending", "ready", "on_deck", "on_stage", "completed"]).optional(),
-  duration_min: z.number().optional(),
+  duration_min: z.number().int().min(1).max(180).optional(),
   notes: opt(2000),
 });
 
 export const saveSegment = createServerFn({ method: "POST" })
   .validator(segmentSchema)
   .handler(async ({ data, context }) => {
-    const { service } = await requireEventManager(context, data.event_id);
+    const { service } = await requireStageManager(context, data.event_id);
     const { id, ...fields } = data;
+    const modelEmails = [...new Set((fields.model_emails || []).map((value) => value.trim().toLowerCase()))];
+    const memberships = asItems(await service.entities.EventMember.filter({ event_id: data.event_id }));
+    const availableModels = new Set(memberships
+      .filter((member) => member.role === "model" && member.status !== "removed")
+      .map((member) => member.user_email?.toLowerCase()));
+    if (modelEmails.some((emailAddress) => !availableModels.has(emailAddress))) {
+      throw Object.assign(new Error("Every assigned model must belong to this event"), { status: 400 });
+    }
+    fields.model_emails = modelEmails;
+    if (id) {
+      const previous = await service.entities.ShowSegment.get(id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id) {
+        throw Object.assign(new Error("Segment not found for this event"), { status: 404 });
+      }
+    }
     if (!id) {
       const existing = asItems(await service.entities.ShowSegment.filter({ event_id: data.event_id }));
       fields.position = fields.position || existing.length + 1;
@@ -521,8 +660,14 @@ export const saveSegment = createServerFn({ method: "POST" })
 export const deleteSegment = createServerFn({ method: "POST" })
   .validator(idOnly)
   .handler(async ({ data, context }) => {
-    const { service } = await requireAdmin(context);
+    const { service: lookup } = await requireUser(context);
+    const segment = await lookup.entities.ShowSegment.get(data.id).catch(() => null);
+    if (!segment) return { ok: true };
+    const { service } = await requireStageManager(context, segment.event_id);
     await service.entities.ShowSegment.delete(data.id);
+    if (segment.status === "on_stage") {
+      await service.entities.Event.update(segment.event_id, { current_segment_id: "", show_status: "idle" });
+    }
     return { ok: true };
   });
 
@@ -531,9 +676,10 @@ export const setSegmentStatus = createServerFn({ method: "POST" })
     idOnly.extend({ status: z.enum(["pending", "ready", "on_deck", "on_stage", "completed"]) }),
   )
   .handler(async ({ data, context }) => {
-    const { service: peek, user } = await requireAdmin(context);
-    const segment = await peek.entities.ShowSegment.get(data.id);
-    const { service } = await requireEventManager(context, segment.event_id);
+    const { service: peek } = await requireUser(context);
+    const segment = await peek.entities.ShowSegment.get(data.id).catch(() => null);
+    if (!segment) throw Object.assign(new Error("Segment not found"), { status: 404 });
+    const { service, user } = await requireStageManager(context, segment.event_id);
 
     if (data.status === "on_stage") {
       const rows = asItems(await service.entities.ShowSegment.filter({ event_id: segment.event_id }));
@@ -566,7 +712,7 @@ export const setSegmentStatus = createServerFn({ method: "POST" })
 export const advanceShow = createServerFn({ method: "POST" })
   .validator(z.object({ event_id: z.string().min(1) }))
   .handler(async ({ data, context }) => {
-    const { service, user } = await requireAdmin(context);
+    const { service, user } = await requireStageManager(context, data.event_id);
     const rows = asItems(
       await service.entities.ShowSegment.filter({ event_id: data.event_id }),
     ).sort((a, b) => (a.position || 0) - (b.position || 0));
@@ -601,7 +747,7 @@ export const advanceShow = createServerFn({ method: "POST" })
 export const resetShow = createServerFn({ method: "POST" })
   .validator(z.object({ event_id: z.string().min(1) }))
   .handler(async ({ data, context }) => {
-    const { service, user } = await requireAdmin(context);
+    const { service, user } = await requireStageManager(context, data.event_id);
     const rows = asItems(await service.entities.ShowSegment.filter({ event_id: data.event_id }));
     await Promise.all(
       rows.map((s) =>
@@ -631,7 +777,7 @@ export const sendAnnouncement = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireEventManager(context, data.event_id);
+    const { user, service } = await requireOperationsManager(context, data.event_id);
     const record = await service.entities.Announcement.create({
       ...data,
       pinned: data.pinned || false,
@@ -687,7 +833,7 @@ const opportunitySchema = z.object({
   organization: opt(160),
   event_id: opt(80),
   requirements: opt(2000),
-  deadline: opt(20),
+  deadline: z.iso.date().optional(),
   status: z.enum(["open", "closed", "archived"]).optional(),
   instructions: opt(2000),
   contact: opt(200),
@@ -699,6 +845,10 @@ export const saveOpportunity = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { user, service } = await requireAdmin(context);
     const { id, ...fields } = data;
+    if (fields.event_id) {
+      const event = await service.entities.Event.get(fields.event_id).catch(() => null);
+      if (!event) throw Object.assign(new Error("Event not found"), { status: 404 });
+    }
     const record = id
       ? await service.entities.Opportunity.update(id, fields)
       : await service.entities.Opportunity.create(fields);
@@ -806,14 +956,23 @@ export const saveTask = createServerFn({ method: "POST" })
       user_email: email,
       title: z.string().min(1).max(200),
       kind: z.enum(["acknowledgement", "prep", "fitting", "wardrobe"]).optional(),
-      due_date: opt(20),
+      due_date: z.iso.date().optional(),
       done: z.boolean().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
-    await requireEventManager(context, data.event_id);
-    const { service } = await requireUser(context);
+    const { service } = await requireBackstageManager(context, data.event_id);
     const { id, ...fields } = data;
+    const modelMembership = await membershipFor(service, { email: data.user_email }, data.event_id);
+    if (!modelMembership || modelMembership.role !== "model") {
+      throw Object.assign(new Error("Choose a model who belongs to this event"), { status: 400 });
+    }
+    if (id) {
+      const previous = await service.entities.ReadinessTask.get(id).catch(() => null);
+      if (!previous || previous.event_id !== data.event_id) {
+        throw Object.assign(new Error("Readiness task not found for this event"), { status: 404 });
+      }
+    }
     const record = id
       ? await service.entities.ReadinessTask.update(id, fields)
       : await service.entities.ReadinessTask.create(fields);
@@ -833,7 +992,10 @@ export const saveTask = createServerFn({ method: "POST" })
 export const deleteTask = createServerFn({ method: "POST" })
   .validator(idOnly)
   .handler(async ({ data, context }) => {
-    const { service } = await requireAdmin(context);
+    const { service: lookup } = await requireUser(context);
+    const task = await lookup.entities.ReadinessTask.get(data.id).catch(() => null);
+    if (!task) return { ok: true };
+    const { service } = await requireBackstageManager(context, task.event_id);
     await service.entities.ReadinessTask.delete(data.id);
     return { ok: true };
   });

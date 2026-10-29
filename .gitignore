@@ -1,0 +1,17 @@
+node_modules/
+.pnpm-store/
+dist/
+.wrangler/
+.tanstack/
+src/routeTree.gen.ts
+.local/
+coverage/
+playwright-report/
+test-results/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db

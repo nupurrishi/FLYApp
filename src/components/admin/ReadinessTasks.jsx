@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, ListChecks, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { deleteTask, saveTask } from "@/lib/manage-fns";
 import { toggleTask } from "@/lib/server-fns";
@@ -93,9 +94,18 @@ export default function ReadinessTasks({ event, models, tasks }) {
               </span>
               <span className="hidden text-[11px] text-black/40 sm:block">{task.user_email.split("@")[0]}</span>
               {task.due_date && <span className="text-[11px] text-black/35">{task.due_date}</span>}
-              <button onClick={() => remove.mutate(task.id)} className="text-black/25 hover:text-red-600" aria-label="Delete task">
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <ConfirmDialog
+                trigger={
+                  <button className="text-black/25 hover:text-red-600" aria-label={`Delete task: ${task.title}`}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                }
+                title="Delete this readiness task?"
+                description="The task will be removed from this event and the model’s task list."
+                confirmLabel="Delete task"
+                destructive
+                onConfirm={() => remove.mutate(task.id)}
+              />
             </div>
           ))}
         </div>

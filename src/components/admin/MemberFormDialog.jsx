@@ -34,13 +34,20 @@ export default function MemberFormDialog({ event, member, users, members, open, 
     mutationFn: async () => {
       const payload = { ...form, id: member?.id, event_id: event.id };
       const record = await saveMember({ data: payload });
-      if (!users.some((user) => user.email === form.user_email)) {
-        await inviteToApp({ data: { email: form.user_email } }).catch(() => null);
-      }
-      return record;
+      const invite = !member && !users.some((user) => user.email?.toLowerCase() === form.user_email.toLowerCase())
+        ? await inviteToApp({ data: { email: form.user_email } }).catch((error) => ({
+            invited: false,
+            message: error?.message || "Invitation could not be sent",
+          }))
+        : null;
+      return { record, invite };
     },
-    onSuccess: () => {
-      toast.success(member ? "Team member updated" : "Team member added");
+    onSuccess: ({ invite }) => {
+      if (invite && !invite.invited) {
+        toast.error(`Member added, but the invitation failed: ${invite.message || "try again from the admin workspace"}`);
+      } else {
+        toast.success(member ? "Team member updated" : "Team member added");
+      }
       queryClient.invalidateQueries();
       onOpenChange(false);
     },
@@ -106,6 +113,8 @@ export default function MemberFormDialog({ event, member, users, members, open, 
               <select className={`${inputClass} w-full px-3 text-sm`} value={form.role} onChange={set("role")}>
                 <option value="model">Model</option>
                 <option value="designer">Designer</option>
+                <option value="stage_manager">Stage Manager</option>
+                <option value="backstage_manager">Backstage Manager</option>
               </select>
             </FormField>
             <FormField label="Status">

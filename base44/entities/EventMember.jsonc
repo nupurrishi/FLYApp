@@ -18,7 +18,9 @@
       "type": "string",
       "enum": [
         "model",
-        "designer"
+        "designer",
+        "stage_manager",
+        "backstage_manager"
       ],
       "default": "model"
     },

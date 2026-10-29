@@ -13,7 +13,7 @@ import TimelineView from "@/components/schedule/TimelineView";
 import { CATEGORIES, categoryLabel } from "@/components/schedule/categories";
 import { useWorkspace } from "@/components/layout/WorkspaceProvider";
 import { Button } from "@/components/ui/button";
-import { getAdminWorkspace, getSchedule } from "@/lib/server-fns";
+import { getOperationsWorkspace, getSchedule } from "@/lib/server-fns";
 import { zoneLabel } from "@/lib/show-time";
 
 export const Route = createFileRoute("/_authed/schedule")({
@@ -28,15 +28,16 @@ const VIEWS = [
 ];
 
 function SchedulePage() {
-  const { isAdmin, user } = useWorkspace();
+  const { isAdmin, user, role } = useWorkspace();
   return (
     <EventGate>
-      {(event) => <ScheduleContent event={event} isAdmin={isAdmin} user={user} />}
+      {(event) => <ScheduleContent event={event} isAdmin={isAdmin} role={role} user={user} />}
     </EventGate>
   );
 }
 
-function ScheduleContent({ event, isAdmin, user }) {
+function ScheduleContent({ event, isAdmin, role, user }) {
+  const canManage = isAdmin || role === "stage_manager";
   const [view, setView] = useState("agenda");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -49,9 +50,9 @@ function ScheduleContent({ event, isAdmin, user }) {
     queryFn: () => getSchedule({ data: { event_id: event.id } }),
   });
   const teamQuery = useQuery({
-    queryKey: ["admin-workspace", event.id],
-    queryFn: () => getAdminWorkspace({ data: { event_id: event.id } }),
-    enabled: isAdmin,
+    queryKey: ["operations-workspace", event.id],
+    queryFn: () => getOperationsWorkspace({ data: { event_id: event.id } }),
+    enabled: canManage,
   });
 
   const items = useMemo(() => {
@@ -78,7 +79,7 @@ function ScheduleContent({ event, isAdmin, user }) {
         title="Schedule"
         description="Call times, fittings, rehearsals and show-day activity — in your event's time zone."
         actions={
-          isAdmin ? (
+          canManage ? (
             <Button
               className="rounded-none bg-brand-black hover:bg-brand-purple"
               onClick={() => setDialog({ open: true, item: null })}
@@ -162,29 +163,29 @@ function ScheduleContent({ event, isAdmin, user }) {
         <EmptyState
           title="Nothing on the schedule"
           description={
-            isAdmin
+            canManage
               ? "Add call times, fittings and rehearsals so your team knows exactly where to be."
               : "Your production team hasn't published anything for these filters yet."
           }
         />
       ) : view === "agenda" ? (
-        <AgendaView items={items} canManage={isAdmin} onEdit={openEditor} />
+        <AgendaView items={items} canManage={canManage} onEdit={openEditor} />
       ) : view === "timeline" ? (
         <div className="border border-brand-line bg-white py-6 pr-4">
-          <TimelineView items={items} canManage={isAdmin} onEdit={openEditor} />
+          <TimelineView items={items} canManage={canManage} onEdit={openEditor} />
         </div>
       ) : (
         <div className="space-y-4">
           <CalendarView items={scheduleQuery.data || []} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
-          <AgendaView items={items} canManage={isAdmin} onEdit={openEditor} />
+          <AgendaView items={items} canManage={canManage} onEdit={openEditor} />
         </div>
       )}
 
-      {isAdmin && (
+      {canManage && (
         <ScheduleFormDialog
           event={event}
           item={dialog.item}
-          members={teamQuery.data?.members || []}
+          members={teamQuery.data?.models || []}
           open={dialog.open}
           onOpenChange={(open) => setDialog({ open, item: open ? dialog.item : null })}
         />

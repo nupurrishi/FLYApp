@@ -12,7 +12,7 @@ import SegmentFormDialog from "@/components/live/SegmentFormDialog";
 import { useWorkspace } from "@/components/layout/WorkspaceProvider";
 import { Button } from "@/components/ui/button";
 import { advanceShow, resetShow, setSegmentStatus, setShowStatus } from "@/lib/manage-fns";
-import { getAdminWorkspace, getLiveShow } from "@/lib/server-fns";
+import { getOperationsWorkspace, getLiveShow } from "@/lib/server-fns";
 
 export const Route = createFileRoute("/_authed/live")({
   head: () => ({ meta: [{ title: "Live Show · Fly Showcase" }] }),
@@ -35,8 +35,8 @@ function LiveContent({ event }) {
   });
   const canControl = liveQuery.data?.canControl;
   const teamQuery = useQuery({
-    queryKey: ["admin-workspace", event.id],
-    queryFn: () => getAdminWorkspace({ data: { event_id: event.id } }),
+    queryKey: ["operations-workspace", event.id],
+    queryFn: () => getOperationsWorkspace({ data: { event_id: event.id } }),
     enabled: !!canControl,
   });
 
@@ -65,7 +65,7 @@ function LiveContent({ event }) {
   const current = segments.find((s) => s.status === "on_stage");
   const onDeck = segments.find((s) => s.status === "on_deck");
   const next = onDeck || segments.find((s) => ["pending", "ready"].includes(s.status) && s.id !== current?.id);
-  const models = teamQuery.data?.members?.filter((m) => m.role === "model") || [];
+  const models = teamQuery.data?.models || [];
 
   return (
     <div>

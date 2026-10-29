@@ -65,6 +65,8 @@ function TeamContent({ event }) {
   const members = data?.members || [];
   const models = members.filter((m) => m.role === "model");
   const designers = members.filter((m) => m.role === "designer");
+  const stageManagers = members.filter((m) => m.role === "stage_manager");
+  const backstageManagers = members.filter((m) => m.role === "backstage_manager");
 
   return (
     <div>
@@ -84,10 +86,12 @@ function TeamContent({ event }) {
         <Loading label="Loading team" />
       ) : (
         <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             {[
               { label: "Models", value: models.length },
               { label: "Designers", value: designers.length },
+              { label: "Stage managers", value: stageManagers.length },
+              { label: "Backstage managers", value: backstageManagers.length },
               { label: "Invited", value: members.filter((m) => m.status === "invited").length },
             ].map((stat) => (
               <div key={stat.label} className="border border-brand-line bg-white px-4 py-3">
@@ -128,6 +132,8 @@ function TeamContent({ event }) {
                   >
                     <option value="model">Model</option>
                     <option value="designer">Designer</option>
+                    <option value="stage_manager">Stage Manager</option>
+                    <option value="backstage_manager">Backstage Manager</option>
                   </select>
                   <button
                     onClick={() => setDialog({ open: true, member })}

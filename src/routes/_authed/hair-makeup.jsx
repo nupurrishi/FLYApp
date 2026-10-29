@@ -46,7 +46,7 @@ function HairMakeupContent({ event }) {
   });
 
   const role = data?.role || "model";
-  const canManage = role === "admin";
+  const canManage = role === "admin" || role === "backstage_manager";
   const appointments = data?.appointments || [];
   const byDate = appointments.reduce((acc, item) => {
     acc[item.date] = acc[item.date] || [];

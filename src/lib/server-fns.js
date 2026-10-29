@@ -30,8 +30,10 @@ const sortSchedule = (items) =>
 const upcomingFrom = (items, stamp) =>
   items.filter((it) => it.status !== "cancelled" && `${it.date}T${it.start_time || "00:00"}` >= stamp);
 
-const roleFor = (user, memberships) =>
-  isAdmin(user) ? "admin" : memberships.some((m) => m.role === "designer") ? "designer" : "model";
+const roleFor = (user, memberships) => {
+  if (isAdmin(user)) return "admin";
+  return memberships.find((m) => m.status !== "removed")?.role || "model";
+};
 
 export const bootstrap = createServerFn({ method: "GET" }).handler(async ({ context }) => {
   const { user, service } = await requireUser(context);
@@ -116,7 +118,11 @@ export const getModelDashboard = createServerFn({ method: "POST" })
 
     const liveSegments = asItems(segments).sort((a, b) => (a.position || 0) - (b.position || 0));
     const currentSegment = liveSegments.find((s) => s.status === "on_stage");
-    const mySegment = liveSegments.find((s) => (s.model_emails || []).includes(user.email));
+    const mySegment = liveSegments.find((s) => (s.model_emails || []).some((email) => email.toLowerCase() === user.email?.toLowerCase()));
+    const privateSegment = (segment) => segment && ({
+      ...segment,
+      model_emails: undefined,
+    });
 
     return {
       event,
@@ -127,10 +133,12 @@ export const getModelDashboard = createServerFn({ method: "POST" })
       nextFitting: upcoming.find((it) => it.category === "fitting") || null,
       hairMakeup: hma.filter((h) => h.status !== "completed"),
       tasks: asItems(tasks).sort((a, b) => Number(a.done) - Number(b.done)),
-      announcements: asItems(announcements).slice(0, 3),
+      announcements: asItems(announcements)
+        .filter((item) => !item.audience || item.audience === "all" || item.audience === "models")
+        .slice(0, 3),
       showStatus: event.show_status,
-      currentSegment: currentSegment || null,
-      mySegment: mySegment || null,
+      currentSegment: privateSegment(currentSegment) || null,
+      mySegment: privateSegment(mySegment) || null,
     };
   });
 
@@ -166,7 +174,9 @@ export const getDesignerDashboard = createServerFn({ method: "POST" })
       fittings: upcoming.filter((it) => it.category === "fitting"),
       upcoming: upcoming.slice(0, 6),
       missing,
-      announcements: asItems(announcements).slice(0, 3),
+      announcements: asItems(announcements)
+        .filter((item) => !item.audience || item.audience === "all" || item.audience === "designers")
+        .slice(0, 3),
       showStatus: event.show_status,
     };
   });
@@ -248,15 +258,24 @@ export const getLookbook = createServerFn({ method: "POST" })
     ]);
 
     const memberRows = asItems(members).filter((m) => m.status !== "removed");
-    const assignmentRows = asItems(assignments);
+    let assignmentRows = asItems(assignments);
     let lookRows = asItems(looks);
 
     if (role === "model") {
       const mine = assignmentRows.filter((a) => a.model_email === user.email).map((a) => a.look_id);
       lookRows = lookRows.filter((l) => mine.includes(l.id));
+      assignmentRows = assignmentRows.filter((a) => a.model_email === user.email);
     } else if (role === "designer" && !admin) {
       lookRows = lookRows.filter((l) => l.designer_email === user.email);
     }
+
+    const collectionRows = asItems(collections).filter((collection) =>
+      admin
+        ? true
+        : role === "designer"
+          ? collection.designer_email?.toLowerCase() === user.email?.toLowerCase()
+          : lookRows.some((look) => look.collection_id === collection.id),
+    );
 
     return {
       role,
@@ -264,9 +283,11 @@ export const getLookbook = createServerFn({ method: "POST" })
         ...look,
         assignments: assignmentRows.filter((a) => a.look_id === look.id),
       })),
-      collections: asItems(collections),
-      models: memberRows.filter((m) => m.role === "model"),
-      designers: memberRows.filter((m) => m.role === "designer"),
+      collections: collectionRows,
+      models: admin || role === "designer"
+        ? memberRows.filter((m) => m.role === "model")
+        : [],
+      designers: admin ? memberRows.filter((m) => m.role === "designer") : [],
     };
   });
 
@@ -281,6 +302,7 @@ export const getHairMakeupBoard = createServerFn({ method: "POST" })
     ]);
     let rows = asItems(appointments);
     if (role === "model") rows = rows.filter((a) => a.model_email === user.email);
+    if (role === "stage_manager") rows = [];
     if (role === "designer") {
       const looks = asItems(
         await service.entities.Look.filter({ event_id: data.event_id, designer_email: user.email }),
@@ -295,9 +317,11 @@ export const getHairMakeupBoard = createServerFn({ method: "POST" })
       appointments: rows.sort((a, b) =>
         `${a.date}${a.start_time}`.localeCompare(`${b.date}${b.start_time}`),
       ),
-      models: asItems(members)
-        .filter((m) => m.role === "model" && m.status !== "removed")
-        .map((m) => ({ email: m.user_email, name: m.full_name || m.user_email })),
+      models: isAdmin(user) || membership?.role === "backstage_manager"
+        ? asItems(members)
+            .filter((m) => m.role === "model" && m.status !== "removed")
+            .map((m) => ({ email: m.user_email, name: m.full_name || m.user_email }))
+        : [],
     };
   });
 
@@ -313,20 +337,28 @@ export const getLiveShow = createServerFn({ method: "POST" })
     return {
       event,
       role,
-      canControl: isAdmin(user),
-      segments,
+      canControl: isAdmin(user) || membership?.role === "stage_manager",
+      segments: isAdmin(user) || membership?.role === "stage_manager"
+        ? segments
+        : segments.map(({ model_emails, ...segment }) => segment),
       mine: segments.filter((s) => (s.model_emails || []).includes(user.email)),
     };
   });
 
 export const getNotifications = createServerFn({ method: "GET" }).handler(async ({ context }) => {
   const { user, service } = await requireUser(context);
+  const memberships = await membershipsFor(service, user);
+  const eventIds = new Set(memberships.filter((m) => m.status !== "removed").map((m) => m.event_id));
   const rows = asItems(
     await service.entities.Notification.filter({ user_email: user.email }, { limit: 200 }),
   );
-  const events = asItems(await service.entities.Event.list({ limit: 100 }));
+  const events = isAdmin(user)
+    ? asItems(await service.entities.Event.list({ limit: 100 }))
+    : (await Promise.all([...eventIds].map((id) => service.entities.Event.get(id).catch(() => null)))).filter(Boolean);
   return {
-    notifications: rows.sort((a, b) => (b.created_date || "").localeCompare(a.created_date || "")),
+    notifications: rows
+      .filter((item) => !item.event_id || isAdmin(user) || eventIds.has(item.event_id))
+      .sort((a, b) => (b.created_date || "").localeCompare(a.created_date || "")),
     events: events.map((e) => ({ id: e.id, name: e.name })),
   };
 });
@@ -334,24 +366,30 @@ export const getNotifications = createServerFn({ method: "GET" }).handler(async 
 export const toggleTask = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string().min(1), done: z.boolean() }))
   .handler(async ({ data, context }) => {
-    const { user, service } = await requireUser(context);
-    const task = await service.entities.ReadinessTask.get(data.id).catch(() => null);
+    const { user, service: lookup } = await requireUser(context);
+    const task = await lookup.entities.ReadinessTask.get(data.id).catch(() => null);
     if (!task) throw Object.assign(new Error("Task not found"), { status: 404 });
-    if (task.user_email !== user.email && !isAdmin(user))
-      throw Object.assign(new Error("You cannot update this task"), { status: 403 });
+    const { service, membership } = await requireEventMember(context, task.event_id);
+    const mayUpdate = isAdmin(user) || membership?.role === "backstage_manager" ||
+      (task.user_email?.toLowerCase() === user.email?.toLowerCase() && membership?.role === "model");
+    if (!mayUpdate) throw Object.assign(new Error("You cannot update this task"), { status: 403 });
     await service.entities.ReadinessTask.update(data.id, { done: data.done });
     return { ok: true };
   });
 
 export const getOpportunities = createServerFn({ method: "GET" }).handler(async ({ context }) => {
   const { user, service } = await requireUser(context);
+  const memberships = await membershipsFor(service, user);
+  const eventIds = new Set(memberships.filter((m) => m.status !== "removed").map((m) => m.event_id));
   const [opportunities, mine] = await Promise.all([
     service.entities.Opportunity.list({ sort: "-created_date", limit: 100 }),
     service.entities.Application.filter({ user_email: user.email }, { limit: 100 }),
   ]);
   const rows = asItems(opportunities);
   return {
-    opportunities: isAdmin(user) ? rows : rows.filter((o) => o.status !== "archived"),
+    opportunities: isAdmin(user)
+      ? rows
+      : rows.filter((o) => o.status !== "archived" && (!o.event_id || eventIds.has(o.event_id))),
     applications: asItems(mine),
     isAdmin: isAdmin(user),
   };
@@ -360,13 +398,16 @@ export const getOpportunities = createServerFn({ method: "GET" }).handler(async 
 export const getProfileData = createServerFn({ method: "GET" }).handler(async ({ context }) => {
   const { user, service } = await requireUser(context);
   const memberships = await membershipsFor(service, user);
-  const events = asItems(await service.entities.Event.list({ limit: 100 }));
+  const eventIds = [...new Set(memberships.filter((m) => m.status !== "removed").map((m) => m.event_id))];
+  const events = isAdmin(user)
+    ? asItems(await service.entities.Event.list({ limit: 100 }))
+    : (await Promise.all(eventIds.map((id) => service.entities.Event.get(id).catch(() => null)))).filter(Boolean);
   const designerProfile = asItems(
     await service.entities.DesignerProfile.filter({ user_email: user.email }),
   )[0] || null;
   return {
     user: await freshUser(service, user),
-    memberships: memberships.map((m) => ({
+    memberships: memberships.filter((m) => m.status !== "removed").map((m) => ({
       ...m,
       event: events.find((e) => e.id === m.event_id) || null,
     })),
@@ -403,6 +444,29 @@ export const getAdminWorkspace = createServerFn({ method: "POST" })
       applications: asItems(applications),
       audit: asItems(audit),
       opportunities: asItems(opportunities),
+      tasks: asItems(tasks),
+    };
+  });
+
+export const getOperationsWorkspace = createServerFn({ method: "POST" })
+  .validator(eventInput)
+  .handler(async ({ data, context }) => {
+    const { user, service, membership } = await requireEventMember(context, data.event_id);
+    const role = isAdmin(user) ? "admin" : membership?.role;
+    if (!isAdmin(user) && !["stage_manager", "backstage_manager"].includes(role)) {
+      throw Object.assign(new Error("You do not have permission to manage event operations"), { status: 403 });
+    }
+    const [members, tasks] = await Promise.all([
+      service.entities.EventMember.filter({ event_id: data.event_id }),
+      role === "backstage_manager" || isAdmin(user)
+        ? service.entities.ReadinessTask.filter({ event_id: data.event_id })
+        : Promise.resolve([]),
+    ]);
+    return {
+      role,
+      models: asItems(members)
+        .filter((member) => member.role === "model" && member.status !== "removed")
+        .map((member) => ({ user_email: member.user_email, full_name: member.full_name || member.user_email })),
       tasks: asItems(tasks),
     };
   });

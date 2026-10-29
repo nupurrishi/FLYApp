@@ -8,7 +8,13 @@ import { useWorkspace } from "@/components/layout/WorkspaceProvider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/lib/AuthContext";
 
-const roleLabel = { admin: "Admin / Manager", designer: "Designer", model: "Model" };
+const roleLabel = {
+  admin: "Admin",
+  designer: "Designer",
+  model: "Model",
+  stage_manager: "Stage Manager",
+  backstage_manager: "Backstage Manager",
+};
 
 export function AppShell({ children }) {
   const { user, role, isAdmin, unreadCount, activeEvent } = useWorkspace();
@@ -16,7 +22,7 @@ export function AppShell({ children }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const items = NAV.filter((item) => !item.adminOnly || isAdmin);
+  const items = NAV.filter((item) => (!item.adminOnly || isAdmin) && (!item.roleOnly || item.roleOnly === role));
   const mobilePrimary = items.filter((item) => item.mobile).slice(0, 4);
   const mobileRest = items.filter((item) => !mobilePrimary.includes(item));
 

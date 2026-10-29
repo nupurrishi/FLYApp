@@ -13,8 +13,8 @@ export async function requireUser(context) {
   let user = null;
   try {
     user = await sdk.auth.me();
-  } catch {
-    user = null;
+  } catch (error) {
+    if (![401, 403].includes(error?.status)) throw error;
   }
   if (!user?.id) throw Object.assign(new Error("Please sign in to continue"), { status: 401 });
   return { user, sdk, service: sdk.asServiceRole };
@@ -34,17 +34,42 @@ export async function membershipFor(service, user, eventId) {
   const rows = asItems(
     await service.entities.EventMember.filter({ event_id: eventId, user_email: user.email }),
   );
-  return rows[0] || null;
+  return rows.find((row) => row.status !== "removed") || null;
 }
 
 // Any signed-in participant of the event (or an admin).
 export async function requireEventMember(context, eventId, roles) {
   const ctx = await requireUser(context);
+  const event = await ctx.service.entities.Event.get(eventId).catch(() => null);
+  if (!event) throw Object.assign(new Error("Event not found"), { status: 404 });
   if (isAdmin(ctx.user)) return { ...ctx, membership: null };
   const membership = await membershipFor(ctx.service, ctx.user, eventId);
   if (!membership) throw forbidden();
   if (roles && !roles.includes(membership.role)) throw forbidden();
   return { ...ctx, membership };
+}
+
+export async function requireEventRole(context, eventId, roles) {
+  const ctx = await requireEventMember(context, eventId, roles);
+  if (!ctx.membership) return ctx;
+  return ctx;
+}
+
+export const requireStageManager = (context, eventId) =>
+  requireEventRole(context, eventId, ["stage_manager"]);
+
+export const requireBackstageManager = (context, eventId) =>
+  requireEventRole(context, eventId, ["backstage_manager"]);
+
+export const requireOperationsManager = async (context, eventId) => {
+  const ctx = await requireEventMember(context, eventId);
+  if (isAdmin(ctx.user) || ["stage_manager", "backstage_manager"].includes(ctx.membership?.role)) return ctx;
+  throw forbidden();
+};
+
+export function requireRoleInEvent(ctx, roles) {
+  if (isAdmin(ctx.user)) return;
+  if (!ctx.membership || !roles.includes(ctx.membership.role)) throw forbidden();
 }
 
 // Admins/managers only: events, people, schedules, show control.
@@ -64,7 +89,7 @@ export async function requireEventManager(context, eventId) {
 export async function requireDesignerOrAdmin(context, designerEmail) {
   const ctx = await requireUser(context);
   if (isAdmin(ctx.user)) return { ...ctx, membership: null };
-  if (!designerEmail || designerEmail !== ctx.user.email) throw forbidden();
+  if (!designerEmail || designerEmail.toLowerCase() !== ctx.user.email?.toLowerCase()) throw forbidden();
   return { ...ctx, membership: null };
 }
 
@@ -72,7 +97,7 @@ export async function visibleSchedule(service, user, eventId, role) {
   const items = asItems(await service.entities.ScheduleItem.filter({ event_id: eventId }));
   return items
     .filter((it) => {
-      if (isAdmin(user)) return true;
+      if (isAdmin(user) || role === "stage_manager" || role === "backstage_manager") return true;
       const audienceMatch =
         it.audience === "all" ||
         (it.audience === "models" && role === "model") ||

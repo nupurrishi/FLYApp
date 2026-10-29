@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import AdminDashboard from "@/components/dashboards/AdminDashboard";
 import DesignerDashboard from "@/components/dashboards/DesignerDashboard";
 import ModelDashboard from "@/components/dashboards/ModelDashboard";
+import OperationsDashboard from "@/components/dashboards/OperationsDashboard";
 import EventGate from "@/components/common/EventGate";
 import { useWorkspace } from "@/components/layout/WorkspaceProvider";
 
@@ -19,6 +20,8 @@ function DashboardPage() {
           <AdminDashboard event={event} />
         ) : role === "designer" ? (
           <DesignerDashboard event={event} />
+        ) : role === "stage_manager" || role === "backstage_manager" ? (
+          <OperationsDashboard event={event} role={role} />
         ) : (
           <ModelDashboard event={event} />
         )

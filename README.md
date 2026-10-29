@@ -1,73 +1,83 @@
-# Fly Showcase — fashion show production platform
+# FLYApp
 
-A full-stack Base44 app: [TanStack Start](https://tanstack.com/start) (React 19, plain JavaScript) with file-based routes, server functions, and the Base44 backend (auth, database, file storage) — hosted by Base44.
+FLYApp is an event operations application for fashion shows and similar productions. The current web application uses TanStack Start, React 19, Base44 authentication/data/storage, and the Cloudflare Vite runtime used by Base44 publishing. The production backend remains Base44; this branch does not migrate or mirror client data to another service.
 
-## What this app does
+## Current implementation
 
-Production tooling for fashion shows: events, teams, schedules, lookbooks, hair & makeup, live show control, notifications, opportunities and applications.
+The web app has authenticated routes for dashboards, events, schedule, lookbook, hair and makeup, live running order, notifications, profiles, opportunities/applications, admin, audit activity, and readiness tasks. Server functions read and write Base44 entities. They use server-side role and event membership checks; entity access rules remain admin-only so browser code cannot bypass those checks by calling an entity directly.
 
-**Three roles** (nothing else):
-
-| Role | How it is granted | What they get |
-| --- | --- | --- |
-| Admin / Manager | the Base44 `User.role = "admin"` (set by workspace admins / invites) | the whole production: events, team, schedule, looks, hair & makeup, running order, announcements, applications, audit log |
-| Designer | an `EventMember` row with `role: "designer"` | their own collections, looks, lookbook uploads and assignments (plus read-only schedule / show info) |
-| Model | an `EventMember` row with `role: "model"` | their own call times, fittings, looks, hair & makeup, readiness tasks and notifications |
-
-There is no separate Stage Manager or Backstage Manager role — those tools live in the single Admin / Manager surface.
-
-## Routes
-
-| Route | Page |
+| Event role | Access |
 | --- | --- |
-| `/login`, `/register`, `/forgot-password`, `/reset-password` | auth (public) |
-| `/` | role dashboard (Model / Designer / Admin) |
-| `/events`, `/events/$eventId` | event selection and event workspace |
-| `/schedule` | agenda, timeline and calendar of schedule items |
-| `/lookbook` | collections, looks, reference images, model assignments |
-| `/hair-makeup` | appointments, stations, artists, status |
-| `/live` | running order, show control (admins), live status for everyone |
-| `/notifications` | notification centre |
-| `/profile` | own profile, measurements, brand details, memberships |
-| `/opportunities` | casting calls and applications |
-| `/admin`, `/admin/announcements`, `/admin/applications`, `/admin/activity` | team, readiness tasks, communications, applications, audit log |
+| Admin | Global event and account administration; all event operations, team membership, announcements, opportunities, applications, audit records, and data management. The role comes from the Base44 account and is not self-assignable in FLYApp. |
+| Model | Event information and schedule items allowed by audience/assignment; own look assignments, hair/makeup appointments, readiness tasks, notifications, and profile. Can update their own assignment status and readiness tasks. |
+| Designer | Event schedule and announcements; own collections and looks; assignment status for their looks. May assign looks only to models who belong to the same event. |
+| Stage Manager | Event schedule and assignments, show segments, running order, live status, and event announcements. Cannot administer accounts, team membership, event lifecycle, applications, or backstage readiness. |
+| Backstage Manager | Event look assignments, hair/makeup appointments, model readiness tasks, and event announcements. Cannot administer accounts, team membership, event lifecycle, or applications. |
 
-## Security model
+Roles other than Admin are assigned by an Admin on each event. Removed memberships do not grant event access. Server functions validate input and confirm that edited records belong to the requested event. Model assignment emails and schedule assignments must refer to event members.
 
-Entity access rules in `base44/entities/*.jsonc` are **admin-only** for every protected record. Models and designers never read the database directly: every page goes through server functions in `src/lib/server-fns.js` (reads) and `src/lib/manage-fns.js` (writes). Each of those re-checks the caller's identity, role and event membership with the helpers in `src/lib/guard.server.js` before touching data with the service-role client — so hiding a link is never what protects a record. A model cannot open another model's look, appointment or measurement record by changing an id, and a designer can only write their own collections and looks.
+## Architecture and migration status
 
-## Sample data
+The GitHub default branch is the Base44 application described above. The repository also contains exploratory Google Sheets and native mobile branches, and an open draft PR for a token-protected Sheets test endpoint. Those do not replace the current data store or provide production authentication. A separate Sheets migration branch substantially rewrites the write layer. WordPress/MySQL has also been explored, but there is no active WordPress backend in this release branch. No migration is applied and no production records are copied, reset, or overwritten here.
 
-One sample event ("Artmosphere — Season 7") is seeded with placeholder designers, models, looks, schedule items, hair & makeup appointments and a running order so the screens can be explored. Delete it from the event page (or edit it) once your own production exists — its members are placeholders and cannot sign in.
+The Base44 web app is the only configured production target in this repository. `wrangler.jsonc` configures the Worker entry used by the Base44/Cloudflare build; it is not evidence that a standalone Cloudflare deployment or custom domain has been configured. The repository does not contain a production domain, account credentials, or a database export. Confirm the client-owned Base44 workspace, plan, domain, and backup policy before production handoff.
 
-## Run locally
+## Requirements and local setup
 
-## Run locally
+Use a Node.js version supported by the installed Vite and Base44 CLI releases, and npm. Copy `.env.example` to `.env` and replace the public app configuration values with the values from the client-owned Base44 app. These `VITE_` values are included in the browser build and must never contain API keys or passwords.
 
-```bash
-npm ci
-base44 login   # one-time per machine
-base44 link    # one-time per clone
-base44 dev     # local backend + app together
+```sh
+npm install
+npx base44 login
+npx base44 link
+npm run dev
 ```
 
-## Build and publish
+Base44 access is required for local server functions and authentication. Do not use a production workspace for destructive testing. The source repository does not include production data or a development seed dataset.
 
-```bash
-npm run build         # -> dist/client (assets) + dist/server (the Worker)
-base44 deploy         # or publish from the Base44 builder
+## Checks
+
+```sh
+npm run lint
+npm test
+npm run build
 ```
 
-There is no `index.html`: the HTML document is rendered on the server from `src/routes/__root.jsx`. The build runs through the [Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/), so dev and build both execute server code in `workerd`.
+The unit tests exercise the pure server authorization helpers with mocked data. They do not replace an authenticated integration test against a configured Base44 workspace. Also verify sign-in, password reset, invitations, event membership, each role's access, CRUD persistence, and mobile layouts in a non-production Base44 environment before release.
 
-## How the pieces fit
+## Deploying
 
-- **Pages** are files in `src/routes/`. A route's `loader` runs on the server for a document request and in the browser for a client navigation; `Route.useLoaderData()` gives the component the resolved data.
-- **Server functions** (`src/lib/server-fns.js`) are RPCs created with `createServerFn`. `src/start.js` runs every one of them through `authMiddleware`, which sends the visitor's token along, so `context.getBase44()` returns a client acting as that visitor and entity access rules apply. `context.getBase44().asServiceRole` bypasses them, so use it only after authenticating the caller (`.middleware([requireUser])`) and checking they may access the records involved: server functions and server routes are public endpoints anyone can call with any input. See **Server Security** in `AGENTS.md`. Call it only in handlers that need Base44: it reads the platform headers, and a handler that never calls it works without them.
-- **Secrets** are read in server code with `import { secrets } from "base44:runtime"` → `secrets.get("NAME")`, inside a handler. Never `process.env`.
-- **Server routes** (`src/routes/api/*.js`) are raw HTTP endpoints for URLs something other than the app's own code requests (webhooks, downloads, feeds); the app's pages call server functions. `src/start.js` runs every request through `base44RequestMiddleware`, so their `server.handlers` receive the same `context.getBase44()` (`({ request, params, context }) => …`).
-- **Server-only code** lives in `*.server.js` files (TanStack refuses to bundle them for the browser).
-- **Auth** is resolved client-side after hydration (`useAuth()`); the server is anonymous on a document request, so give per-user pages `ssr: false`.
-- **Sign-in and gated pages** are not wired in the starter: `src/components/auth/` holds the pages (login, register, password reset, MCP consent) and a login gate for `src/routes/_authed/`, to add when the app needs them. See **Adding Authentication** in `AGENTS.md`.
-- **AI**: TanStack AI is installed and runs on the Base44 AI gateway, with no API key and usage billed to the app's AI credits. `gatewayModel(context.getBase44())` in `src/lib/ai.server.js` builds the adapter; `AGENTS.md` has a streaming chat example (a server route plus `useChat`).
-- **Caching**: the platform caches only what a route opts into via `headers()` (`Cache-Control: public, s-maxage=…`). Everything else is served fresh.
+The configured workflow is to publish through the client-owned Base44 workspace, not to run `wrangler deploy` directly:
+
+```sh
+npm run build
+npx base44 deploy
+```
+
+The Base44 owner must complete CLI/browser authorization, link this repository to the intended app, configure the app ID and function version, set the client domain in Base44, and review billing. Do not put backend secrets in `.env`, source code, or `VITE_` variables. The current application uses Base44-managed authentication, records, file storage, and invitations. There are no Google Sheets, MySQL, or Firebase credentials required by the current web branch.
+
+### First administrator
+
+Do not create an unrestricted administrator through a public registration flow or add a hardcoded admin account. The owner must create/verify the designated account in the client’s Base44 workspace and grant the Base44 `admin` role from the workspace’s trusted user administration controls. Then sign in and add event-specific staff through **Admin Management**. FLYApp does not contain an automatic bootstrap-admin command.
+
+### Data protection and backups
+
+The current Base44 integration is the source of truth. Before client rollout, identify the workspace owner, retention policy, export format, and backup/restore process with Base44. Test restoration using a non-production copy. Event deletion in the app removes event-linked records and must be treated as destructive; take an export first. Never use setup or migration steps to clear production records.
+
+## Client handoff checklist
+
+- Confirm the client owns the Base44 workspace, app, and domain, and can authorize the Base44 CLI.
+- Configure `.env` values locally and verify the same app ID and function version in the hosted workspace.
+- Verify the Base44 admin account and invite the initial event team with event-specific roles.
+- Run the checks above and exercise each workflow with separate test accounts in a non-production event.
+- Confirm the workspace billing tier, data export/backup policy, and domain renewal ownership.
+- Deploy from the reviewed release branch through Base44; verify direct navigation, refresh, auth expiry, and phone layouts on the deployed URL.
+- Do not connect the Sheets test endpoint or mobile/Firebase branch to production until its authentication, data ownership, migration and recovery plans are separately reviewed.
+
+## Known limitations and unverified work
+
+- No Base44 account credentials or linked client workspace are available in this checkout. Hosted authentication, data persistence, invitations, deployment, domain setup, and billing have not been verified here.
+- No production domain, client data export, backup configuration, or established migration plan is present in the repository.
+- The repository’s prior Sheets, WordPress/MySQL, and Expo/Firebase work remains exploratory and has not been adopted by this web release branch.
+- The draft Sheets PR describes itself as a test integration and explicitly says it does not replace Base44 auth or the remaining entity operations.
+- No real sample event is seeded in the current branch; create test records only in a non-production workspace.
