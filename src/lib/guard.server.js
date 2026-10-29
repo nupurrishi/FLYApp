@@ -1,6 +1,9 @@
 // Server-only authorization helpers. Every read and write in the app goes through
 // these: the browser never touches protected records directly (entity rules are
-// admin-only), so permissions are always re-checked on the server.
+// server-side handlers, so permissions are always re-checked before database access.
+import { getRequestHeaders, setResponseStatus } from "@tanstack/react-start/server";
+import { getAuth } from "./auth.server.js";
+import { getEntityService } from "./backend.server.js";
 
 export const asItems = (res) => (Array.isArray(res) ? res : (res?.items ?? []));
 
@@ -9,15 +12,15 @@ export const isAdmin = (user) => user?.role === "admin";
 const forbidden = () => Object.assign(new Error("You do not have permission to do that"), { status: 403 });
 
 export async function requireUser(context) {
-  const sdk = context.getBase44();
-  let user = null;
-  try {
-    user = await sdk.auth.me();
-  } catch (error) {
-    if (![401, 403].includes(error?.status)) throw error;
+  const session = context?.getSession
+    ? await context.getSession()
+    : await getAuth().api.getSession({ headers: context?.request?.headers || getRequestHeaders() });
+  const user = session?.user;
+  if (!user?.id) {
+    try { setResponseStatus(401); } catch { /* server route helpers may run outside a Start function */ }
+    throw Object.assign(new Error("Please sign in to continue"), { status: 401, code: "UNAUTHORIZED" });
   }
-  if (!user?.id) throw Object.assign(new Error("Please sign in to continue"), { status: 401 });
-  return { user, sdk, service: sdk.asServiceRole };
+  return { user: { ...user, full_name: user.full_name || user.name || user.email }, service: context?.service || getEntityService() };
 }
 
 export async function requireAdmin(context) {

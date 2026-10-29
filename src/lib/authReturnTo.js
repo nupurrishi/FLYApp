@@ -1,16 +1,14 @@
-// Post-auth destination, shared by the auth pages and the MCP consent page.
+// Post-auth destination shared by the app's authentication pages.
 // Keep the check in one place — it is security-sensitive.
 //
-// Reads ?returnTo= (our pages) or ?from_url= (what the platform's redirectToLogin
-// and login-gate redirects send). A same-origin check alone is not enough: a
+// Reads ?returnTo= (our pages) and tolerates ?from_url= for old shared links. A same-origin check alone is not enough: a
 // value like "/.//evil.com" or "/\evil.com" parses same-origin but normalizes
 // to a protocol-relative "//evil.com" when assigned to location.href, so the
 // resolved path must start with exactly one "/" and contain no backslash.
 //
 // An auth page is never a destination: coming back to /reset-password?token=…
 // would carry a live one-time credential through the login round-trip (and,
-// via Google, into the provider's OAuth state), and the other three would just
-// loop. `/oauth/consent` is a legitimate destination and is not in this set.
+// during the login round trip and the other auth pages would loop.
 const AUTH_PAGES = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
 
 export function safeReturnTo(search) {

@@ -1,158 +1,61 @@
 import { Lock, Mail, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
+import { AuthError, AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
+import { authClient } from "@/lib/auth-client";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
-const isAlreadyVerified = (err) => err?.status === 400 && /already verified/i.test(err?.message ?? "");
-
-/**
- * The /register page: register → OTP → verifyOtp → setToken. Registration alone
- * does not sign the user in (the account is unverified), so the code step is never
- * skipped and loginViaEmailPassword is never called right after register.
- */
 export function RegisterPage() {
   const returnTo = safeReturnTo();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [step, setStep] = useState("form");
   const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function register(e) {
     e.preventDefault();
     setError("");
-    if (password !== confirm) {
-      setError("Passwords do not match");
-      return;
-    }
+    if (password.length < 8) return setError("Use a password with at least 8 characters.");
+    if (password !== confirm) return setError("Passwords do not match.");
     setBusy(true);
     try {
-      await base44.auth.register({ email, password });
-      setStep("otp");
+      const result = await authClient.signUp.email({
+        name: name.trim(), email: email.trim().toLowerCase(), password, callbackURL: returnTo,
+      });
+      if (result.error) throw new Error(result.error.message || "Registration failed.");
+      setSent(true);
     } catch (err) {
-      setError(err.message || "Registration failed");
+      setError(err.message || "Registration failed. Please try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function verify(e) {
-    e.preventDefault();
-    setError("");
-    setBusy(true);
-    try {
-      const result = await base44.auth.verifyOtp({ email, otpCode });
-      if (result?.access_token) base44.auth.setToken(result.access_token);
-      window.location.href = returnTo;
-    } catch (err) {
-      // Verified server-side but the answer never arrived: the code is spent and
-      // there is no token, so the only way forward is a normal sign-in.
-      if (isAlreadyVerified(err)) setStep("already_verified");
-      else setError(err.message || "Invalid verification code");
-      setBusy(false);
-    }
-  }
-
-  async function resend() {
-    setError("");
-    try {
-      await base44.auth.resendOtp(email);
-      toast("Code sent", { description: "Check your email for the new code." });
-    } catch (err) {
-      if (isAlreadyVerified(err)) setStep("already_verified");
-      else setError(err.message || "Failed to resend code");
-    }
-  }
-
-  if (step === "already_verified") {
+  if (sent) {
     return (
-      <AuthLayout icon={UserPlus} title="Create your account" subtitle="Sign up to get started">
-        <p className="mb-4 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{email}</span> is already verified. Sign in to continue.
-        </p>
-        <AuthLink to="/login" returnTo={returnTo} className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90">
-          Sign in
-        </AuthLink>
-      </AuthLayout>
-    );
-  }
-
-  if (step === "otp") {
-    return (
-      <AuthLayout icon={UserPlus} title="Create your account" subtitle="Sign up to get started">
-        <form onSubmit={verify}>
-          <p className="mb-4 text-sm text-muted-foreground">
-            We sent a 6-digit code to <span className="font-medium text-foreground">{email}</span>.
-          </p>
-          <AuthError>{error}</AuthError>
-          <div className="mb-6 flex justify-center">
-            <InputOTP maxLength={6} value={otpCode} onChange={setOtpCode} autoFocus autoComplete="one-time-code">
-              <InputOTPGroup>
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <InputOTPSlot key={i} index={i} />
-                ))}
-              </InputOTPGroup>
-            </InputOTP>
-          </div>
-          <SubmitButton busy={busy} busyLabel="Verifying..." disabled={busy || otpCode.length < 6}>
-            Verify
-          </SubmitButton>
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            Didn't receive the code?{" "}
-            <button type="button" onClick={resend} className="font-medium text-primary hover:underline">
-              Resend
-            </button>
-          </p>
-        </form>
+      <AuthLayout icon={Mail} title="Check your email" subtitle="Verify your address to finish creating your account">
+        <p className="text-center text-sm text-foreground">If the address is eligible, a verification link was sent to <strong>{email}</strong>. Follow the link, then sign in.</p>
+        <p className="mt-6 text-center text-sm text-muted-foreground"><AuthLink to="/login" returnTo={returnTo}>Back to sign in</AuthLink></p>
       </AuthLayout>
     );
   }
 
   return (
-    <AuthLayout icon={UserPlus} title="Create your account" subtitle="Sign up to get started">
-      <GoogleButton returnTo={returnTo} />
-      <OrDivider />
+    <AuthLayout icon={UserPlus} title="Create your account" subtitle="Sign up to access your FLYApp event workspace">
       <AuthError>{error}</AuthError>
       <form onSubmit={register} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="register-email">Email</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input id="register-email" type="email" autoComplete="email" autoFocus placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 pl-10" disabled={busy} required />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="register-password">Password</Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input id="register-password" type="password" autoComplete="new-password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 pl-10" disabled={busy} required />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="register-confirm">Confirm password</Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input id="register-confirm" type="password" autoComplete="new-password" placeholder="••••••••" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="h-12 pl-10" disabled={busy} required />
-          </div>
-        </div>
-        <SubmitButton busy={busy} busyLabel="Creating account...">
-          Create account
-        </SubmitButton>
+        <div className="space-y-2"><Label htmlFor="register-name">Name</Label><Input id="register-name" autoComplete="name" autoFocus value={name} onChange={(e) => setName(e.target.value)} className="h-12" disabled={busy} required maxLength={160} /></div>
+        <div className="space-y-2"><Label htmlFor="register-email">Email</Label><div className="relative"><Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input id="register-email" type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 pl-10" disabled={busy} required maxLength={254} /></div></div>
+        <div className="space-y-2"><Label htmlFor="register-password">Password</Label><div className="relative"><Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input id="register-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 pl-10" disabled={busy} required minLength={8} maxLength={128} /></div></div>
+        <div className="space-y-2"><Label htmlFor="register-confirm">Confirm password</Label><div className="relative"><Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input id="register-confirm" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="h-12 pl-10" disabled={busy} required minLength={8} maxLength={128} /></div></div>
+        <SubmitButton busy={busy} busyLabel="Creating account...">Create account</SubmitButton>
       </form>
-      <p className="mt-6 text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
-        <AuthLink to="/login" returnTo={returnTo}>
-          Log in
-        </AuthLink>
-      </p>
+      <p className="mt-6 text-center text-sm text-muted-foreground">Already have an account? <AuthLink to="/login" returnTo={returnTo}>Sign in</AuthLink></p>
     </AuthLayout>
   );
 }

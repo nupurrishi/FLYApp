@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { sendAccountEmail } from "@/lib/mail.server";
 import { z } from "zod";
 import {
   asItems,
@@ -220,9 +221,16 @@ export const removeMember = createServerFn({ method: "POST" })
 export const inviteToApp = createServerFn({ method: "POST" })
   .validator(z.object({ email }))
   .handler(async ({ data, context }) => {
-    const { service } = await requireAdmin(context);
+    await requireAdmin(context);
     try {
-      await service.users.inviteUser(data.email, "user");
+      const appUrl = process.env.BETTER_AUTH_URL;
+      if (!appUrl) throw new Error("BETTER_AUTH_URL is not configured");
+      await sendAccountEmail({
+        to: data.email,
+        subject: "You have been invited to FLYApp",
+        url: `${appUrl}/register?email=${encodeURIComponent(data.email)}`,
+        intro: "An event administrator added you to the FLYApp team. Create your account with this email address to view your event workspace.",
+      });
       return { invited: true };
     } catch (error) {
       return { invited: false, message: error?.message || "Invite could not be sent" };
@@ -898,15 +906,21 @@ export const applyToOpportunity = createServerFn({ method: "POST" })
     );
     if (existing.length)
       throw Object.assign(new Error("You have already applied to this opportunity"), { status: 400 });
-    const record = await service.entities.Application.create({
-      opportunity_id: data.opportunity_id,
-      opportunity_title: opportunity.title,
-      user_email: user.email,
-      full_name: user.full_name || user.email,
-      message: data.message,
-      portfolio_url: data.portfolio_url || "",
-      status: "submitted",
-    });
+    let record;
+    try {
+      record = await service.entities.Application.create({
+        opportunity_id: data.opportunity_id,
+        opportunity_title: opportunity.title,
+        user_email: user.email,
+        full_name: user.full_name || user.email,
+        message: data.message,
+        portfolio_url: data.portfolio_url || "",
+        status: "submitted",
+      });
+    } catch (error) {
+      if (error?.code === "23505") throw Object.assign(new Error("You have already applied to this opportunity"), { status: 409 });
+      throw error;
+    }
     await notify(service, {
       emails: [user.email, ...(await adminEmails(service))],
       title: `Application submitted: ${opportunity.title}`,
@@ -1024,9 +1038,9 @@ export const updateProfile = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
-    const { user, sdk } = await requireUser(context);
+    const { user, service } = await requireUser(context);
     const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
-    const updated = await sdk.auth.updateMe(clean);
+    const updated = await service.entities.User.update(user.id, clean);
     return { ...user, ...clean, ...updated };
   });
 

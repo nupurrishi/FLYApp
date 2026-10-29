@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { ImagePlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { uploadImage } from "@/api/uploadClient";
 import { Image } from "@/components/ui/image";
 
 const MAX_IMAGES = 6;
 
-export default function ImageListField({ value = [], onChange, label = "Reference images" }) {
+export default function ImageListField({ value = [], onChange, label = "Reference images", eventId }) {
   const [busy, setBusy] = useState(false);
 
   async function pick(event) {
@@ -19,8 +19,8 @@ export default function ImageListField({ value = [], onChange, label = "Referenc
     }
     setBusy(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadPublicFile({ file });
-      onChange([...value, file_url]);
+      const fileUrl = await uploadImage(file, eventId);
+      onChange([...value, fileUrl]);
       toast.success("Image uploaded");
     } catch {
       toast.error("That image could not be uploaded. Try a JPG or PNG under 8 MB.");
@@ -55,7 +55,7 @@ export default function ImageListField({ value = [], onChange, label = "Referenc
           <label className="flex aspect-[3/4] cursor-pointer flex-col items-center justify-center gap-1 border border-dashed border-brand-line bg-white text-black/35 transition hover:border-brand-purple hover:text-brand-purple">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
             <span className="text-[9px] uppercase tracking-[0.14em]">{busy ? "Uploading" : "Add"}</span>
-            <input type="file" accept="image/*" className="hidden" onChange={pick} disabled={busy} />
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={pick} disabled={busy} />
           </label>
         )}
       </div>

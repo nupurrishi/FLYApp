@@ -19,8 +19,7 @@ function context({ user, memberships = [], events = ["event-1"] }) {
       },
     },
   };
-  const sdk = { auth: { me: async () => user }, asServiceRole: service };
-  return { getBase44: () => sdk };
+  return { getSession: async () => user ? { user } : null, service };
 }
 
 const member = (role, status = "active") => ({

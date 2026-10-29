@@ -131,6 +131,7 @@ export default function HairMakeupFormDialog({ event, appointment, models, open,
           </FormField>
           <ImageListField
             label="Reference images"
+            eventId={event?.id}
             value={form.reference_images || []}
             onChange={(reference_images) => setForm((prev) => ({ ...prev, reference_images }))}
           />

@@ -73,7 +73,7 @@ export default function EventFormDialog({ event, trigger }) {
           <FormField label="Description">
             <Textarea className="min-h-24 rounded-none border-brand-line bg-white" value={form.description || ""} onChange={set("description")} />
           </FormField>
-          <ImageField label="Event artwork" value={form.cover_image} onChange={(url) => setForm((p) => ({ ...p, cover_image: url }))} />
+          <ImageField label="Event artwork" eventId={event?.id} requireEvent value={form.cover_image} onChange={(url) => setForm((p) => ({ ...p, cover_image: url }))} />
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Start date" required>
               <Input type="date" className={inputClass} value={form.start_date || ""} onChange={set("start_date")} />

@@ -1,6 +1,6 @@
 import { ArrowLeft, Mail } from "lucide-react";
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { authClient } from "@/lib/auth-client";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
@@ -19,9 +19,12 @@ export function ForgotPasswordPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await base44.auth.resetPasswordRequest(email);
+      await authClient.requestPasswordReset({
+        email: email.trim().toLowerCase(),
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
     } catch {
-      // Same outcome either way.
+      // Keep account enumeration private and use the same result for delivery failures.
     } finally {
       setBusy(false);
       setSent(true);

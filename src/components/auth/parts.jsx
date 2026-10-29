@@ -1,8 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { GoogleIcon } from "./GoogleIcon";
-import { base44 } from "@/api/base44Client";
 import { returnToSearch } from "@/lib/authReturnTo";
 
 // Small pieces the auth pages share.
@@ -28,28 +25,6 @@ export function SubmitButton({ busy, busyLabel, children, ...props }) {
         children
       )}
     </Button>
-  );
-}
-
-export function GoogleButton({ returnTo }) {
-  return (
-    <Button type="button" variant="outline" className="mb-6 h-12 w-full text-sm font-medium" onClick={() => base44.auth.loginWithProvider("google", returnTo)}>
-      <GoogleIcon className="mr-2 h-5 w-5" />
-      Continue with Google
-    </Button>
-  );
-}
-
-export function OrDivider() {
-  return (
-    <div className="relative mb-6">
-      <div className="absolute inset-0 flex items-center">
-        <div className="w-full border-t border-border" />
-      </div>
-      <div className="relative flex justify-center text-xs uppercase">
-        <span className="bg-card px-3 text-muted-foreground">or</span>
-      </div>
-    </div>
   );
 }
 

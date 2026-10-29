@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: flyapp
+      POSTGRES_USER: flyapp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flyapp -d flyapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks: [private]
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://flyapp:${POSTGRES_PASSWORD}@db:5432/flyapp
+      PORT: 3000
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploaded_files:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+
+  proxy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+    networks: [private]
+
+volumes:
+  postgres_data:
+  uploaded_files:
+  caddy_data:
+  caddy_config:
+
+networks:
+  private:

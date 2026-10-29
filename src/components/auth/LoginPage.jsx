@@ -1,8 +1,8 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { authClient } from "@/lib/auth-client";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
+import { AuthError, AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { safeReturnTo } from "@/lib/authReturnTo";
@@ -28,7 +28,8 @@ export function LoginPage() {
     }
     setBusy(true);
     try {
-      await base44.auth.loginViaEmailPassword(email.trim(), password);
+      const result = await authClient.signIn.email({ email: email.trim(), password, callbackURL: returnTo });
+      if (result.error) throw new Error(result.error.message || "We couldn't sign you in.");
       // A hard redirect: the app re-initializes with the new session.
       window.location.href = returnTo;
     } catch (err) {
@@ -42,8 +43,6 @@ export function LoginPage() {
       title="Sign in to your workspace"
       subtitle="Access your call times, fittings, looks and show-day information."
     >
-      <GoogleButton returnTo={returnTo} />
-      <OrDivider />
       <AuthError>{error}</AuthError>
       <form onSubmit={submit} className="space-y-5" noValidate>
         <div className="space-y-2">

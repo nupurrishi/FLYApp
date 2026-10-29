@@ -152,7 +152,7 @@ export default function LookFormDialog({ event, look, collections, designers, cu
               </select>
             </FormField>
           )}
-          <ImageListField value={form.images} onChange={(images) => setForm((prev) => ({ ...prev, images }))} />
+          <ImageListField eventId={event?.id} value={form.images} onChange={(images) => setForm((prev) => ({ ...prev, images }))} />
           <FormField label="Garment description">
             <Textarea className="min-h-20 rounded-none border-brand-line bg-white" value={form.description || ""} onChange={set("description")} />
           </FormField>

@@ -1,6 +1,10 @@
 node_modules/
 .pnpm-store/
 dist/
+.output/
+.nitro/
+.data/
+data/
 .wrangler/
 .tanstack/
 src/routeTree.gen.ts

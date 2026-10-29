@@ -95,7 +95,7 @@ export default function CollectionFormDialog({ event, collection, designers, cur
               </select>
             </FormField>
           )}
-          <ImageField label="Collection cover" value={form.cover_image} onChange={(url) => setForm((p) => ({ ...p, cover_image: url }))} />
+          <ImageField label="Collection cover" eventId={event?.id} value={form.cover_image} onChange={(url) => setForm((p) => ({ ...p, cover_image: url }))} />
           <FormField label="Description">
             <Textarea className="min-h-20 rounded-none border-brand-line bg-white" value={form.description || ""} onChange={set("description")} />
           </FormField>
