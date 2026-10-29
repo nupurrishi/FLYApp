@@ -26,7 +26,10 @@ until a human installs this source and redeploys it. **No production app data is
    permissions prompt. It creates any missing tabs and adds headers only to empty tabs.
 6. Run `testFlyAppBackend` from the editor. Confirm it reports the spreadsheet name and
    the four expected tabs.
-7. Open **Deploy → Manage deployments**, edit the existing Web App deployment, choose
+7. To verify that writing works before connecting the app, run `createSmokeTestEvent` once.
+   Confirm a row named `FLYApp Smoke Test ...` appears in the `Events` tab. This deliberately
+   creates a test row; delete it afterward if you want a clean sheet.
+8. Open **Deploy → Manage deployments**, edit the existing Web App deployment, choose
    a new version, and deploy. Keep access settings restricted as much as possible for the
    prototype. Apps Script deployments that must be called by an external server may require
    public web-app access; if so, the API key is only an additional gate, not a replacement
@@ -35,6 +38,7 @@ until a human installs this source and redeploys it. **No production app data is
 
 ## API actions currently implemented in this script
 
+- Apps Script editor function `createSmokeTestEvent`: adds one clearly labelled test row to `Events`.
 - `GET ?action=health`: public health check; no sheet rows are returned.
 - `GET ?action=listEvents&key=...`: reads Events rows.
 - `GET ?action=listSchedules&event_id=...&key=...`: reads Schedules rows, optionally filtered by event.
