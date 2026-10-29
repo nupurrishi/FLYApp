@@ -82,6 +82,28 @@ function doPost(e) {
   }
 }
 
+/**
+ * One-click smoke test from the Apps Script editor.
+ * Creates one clearly labelled demo event in the private test spreadsheet.
+ * Run only when you are ready for a test row to be added.
+ */
+function createSmokeTestEvent() {
+  const spreadsheet = getSpreadsheet_();
+  const sheet = spreadsheet.getSheetByName("Events");
+  if (!sheet) throw new Error("Missing Events tab. Run setupFlyAppSheets first.");
+  const now = new Date();
+  const row = {
+    event_id: Utilities.getUuid(),
+    event_name: "FLYApp Smoke Test " + Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"),
+    event_date: Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd"),
+    location: "Test only",
+    status: "draft",
+    created_at: now.toISOString(),
+  };
+  appendObject_("Events", row);
+  return { ok: true, message: "Smoke-test event created in the Events tab.", data: row };
+}
+
 function testFlyAppBackend() {
   const spreadsheet = getSpreadsheet_();
   return {
