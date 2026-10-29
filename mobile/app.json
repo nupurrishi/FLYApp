@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "FLYApp",
+    "slug": "flyapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "flyapp",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.flyshowcase.flyapp"
+    },
+    "android": {
+      "package": "com.flyshowcase.flyapp",
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}
