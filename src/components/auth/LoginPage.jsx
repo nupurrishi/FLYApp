@@ -8,6 +8,7 @@ import { safeReturnTo } from "@/lib/authReturnTo";
 import { supabase } from "@/lib/supabase";
 
 const labelClass = "label-eyebrow text-black/45";
+const ALLOWED_ROLES = ["model", "designer", "admin"];
 
 export function LoginPage() {
   const returnTo = safeReturnTo();
@@ -36,7 +37,7 @@ export function LoginPage() {
         .maybeSingle();
 
       if (profileError) throw profileError;
-      if (!profile || !["model", "designer", "manager", "admin"].includes(profile.role)) {
+      if (!profile || !ALLOWED_ROLES.includes(profile.role)) {
         await supabase.auth.signOut();
         throw new Error("Your account profile is missing or does not have an assigned role. Please contact the FLYApp team.");
       }
@@ -77,7 +78,7 @@ export function LoginPage() {
         <AuthLink to="/register" returnTo={returnTo} className="font-medium text-brand-purple hover:underline">Create an account</AuthLink>
       </p>
       <p className="mt-4 text-center text-[11px] leading-relaxed text-black/35">
-        Create a Model or Designer account. Manager and Admin accounts are created privately by the FLYApp team.
+        Create a Model or Designer account. Admin accounts are created privately by the FLYApp owner.
       </p>
     </AuthLayout>
   );
