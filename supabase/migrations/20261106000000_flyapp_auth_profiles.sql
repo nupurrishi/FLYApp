@@ -1,76 +1,96 @@
--- FLYApp public signup: Models and Designers only.
--- Existing Supabase Auth users remain managed by Supabase; this table stores app roles.
+-- FLYApp Supabase Auth Profiles
+-- Public registration: Models and Designers only.
+-- Admin accounts are created separately.
 
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text unique,
-  full_name text not null default '',
-  role text not null default 'model',
-  created_at timestamptz not null default now(),
-  constraint profiles_role_allowed check (role in ('model', 'designer', 'manager', 'admin'))
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email text UNIQUE,
+  full_name text NOT NULL DEFAULT '',
+  role public.user_role NOT NULL DEFAULT 'model'::public.user_role,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
-alter table public.profiles add column if not exists email text;
-alter table public.profiles add column if not exists full_name text not null default '';
-alter table public.profiles add column if not exists role text not null default 'model';
-alter table public.profiles enable row level security;
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS email text;
 
--- A user can read only their own profile. Role changes are intentionally not
--- granted to regular authenticated users; managers/admins are provisioned privately.
-drop policy if exists "Users can read their own FLYApp profile" on public.profiles;
-create policy "Users can read their own FLYApp profile"
-  on public.profiles for select
-  to authenticated
-  using (auth.uid() = id);
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS full_name text NOT NULL DEFAULT '';
 
-create or replace function public.handle_flyapp_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Users can read only their own profile.
+DROP POLICY IF EXISTS "Users can read their own FLYApp profile"
+ON public.profiles;
+
+CREATE POLICY "Users can read their own FLYApp profile"
+ON public.profiles
+FOR SELECT
+TO authenticated
+USING (auth.uid() = id);
+
+-- Automatically create profiles for new users.
+CREATE OR REPLACE FUNCTION public.handle_flyapp_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
   requested_role text;
-begin
-  requested_role := coalesce(new.raw_user_meta_data ->> 'role', 'model');
-  if requested_role not in ('model', 'designer') then
+BEGIN
+  requested_role := COALESCE(
+    NEW.raw_user_meta_data ->> 'role',
+    'model'
+  );
+
+  -- Public registration can only create Models or Designers.
+  IF requested_role NOT IN ('model', 'designer') THEN
     requested_role := 'model';
-  end if;
+  END IF;
 
-  insert into public.profiles (id, email, full_name, role)
-  values (
-    new.id,
-    new.email,
-    coalesce(new.raw_user_meta_data ->> 'full_name', ''),
-    requested_role
+  INSERT INTO public.profiles (id, email, full_name, role)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data ->> 'full_name', ''),
+    requested_role::public.user_role
   )
-  on conflict (id) do update
-    set email = excluded.email,
-        full_name = excluded.full_name;
+  ON CONFLICT (id) DO UPDATE
+  SET
+    email = EXCLUDED.email,
+    full_name = EXCLUDED.full_name;
 
-  return new;
-end;
+  RETURN NEW;
+END;
 $$;
 
-drop trigger if exists on_flyapp_auth_user_created on auth.users;
-create trigger on_flyapp_auth_user_created
-  after insert on auth.users
-  for each row execute procedure public.handle_flyapp_new_user();
+DROP TRIGGER IF EXISTS on_flyapp_auth_user_created
+ON auth.users;
 
--- Existing accounts with no profile are backfilled as ordinary model accounts.
-insert into public.profiles (id, email, full_name, role)
-select
+CREATE TRIGGER on_flyapp_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW
+EXECUTE PROCEDURE public.handle_flyapp_new_user();
+
+-- Backfill existing accounts without profiles.
+INSERT INTO public.profiles (id, email, full_name, role)
+SELECT
   u.id,
   u.email,
-  coalesce(u.raw_user_meta_data ->> 'full_name', ''),
-  case
-    when u.raw_user_meta_data ->> 'role' = 'designer' then 'designer'
-    when u.raw_user_meta_data ->> 'role' = 'admin' then 'admin'
-    when u.raw_user_meta_data ->> 'role' = 'manager' then 'manager'
-    else 'model'
-  end
-from auth.users u
-where not exists (select 1 from public.profiles p where p.id = u.id);
+  COALESCE(u.raw_user_meta_data ->> 'full_name', ''),
+  CASE
+    WHEN u.raw_user_meta_data ->> 'role' = 'designer'
+      THEN 'designer'::public.user_role
+    WHEN u.raw_user_meta_data ->> 'role' = 'admin'
+      THEN 'admin'::public.user_role
+    ELSE 'model'::public.user_role
+  END
+FROM auth.users u
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM public.profiles p
+  WHERE p.id = u.id
+);
 
--- IMPORTANT: do not add a client INSERT/UPDATE policy for profiles. This prevents
--- public users from promoting themselves to Manager or Admin.
+-- IMPORTANT: Do not add client INSERT/UPDATE policies for profiles.
+-- Public users must never be able to promote themselves to Admin.
