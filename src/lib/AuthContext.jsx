@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentUrl } from "@/lib/authReturnTo";
 
+const ALLOWED_ROLES = ["model", "designer", "admin"];
+
 export const authQuery = queryOptions({
   queryKey: ["auth", "me"],
   queryFn: async () => {
@@ -16,7 +18,7 @@ export const authQuery = queryOptions({
       .maybeSingle();
 
     if (profileError) throw profileError;
-    if (!profile || !["model", "designer", "manager", "admin"].includes(profile.role)) {
+    if (!profile || !ALLOWED_ROLES.includes(profile.role)) {
       return {
         user: null,
         error: {
