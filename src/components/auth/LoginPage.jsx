@@ -100,12 +100,6 @@ export function LoginPage() {
           Sign in
         </SubmitButton>
       </form>
-      <p className="mt-7 text-center text-sm text-black/55">
-        New to Fly Showcase?{" "}
-        <AuthLink to="/register" returnTo={returnTo} className="font-medium text-brand-purple hover:underline">
-          Create an account
-        </AuthLink>
-      </p>
       <p className="mt-4 text-center text-[11px] leading-relaxed text-black/35">
         Team members are added to events by the production team. Accounts have no event access until invited.
       </p>
