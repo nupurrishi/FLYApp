@@ -79,9 +79,42 @@ function auth_(v){const x=PropertiesService.getScriptProperties().getProperty("F
 function read_(name){const s=ss_().getSheetByName(name);if(!s||s.getLastRow()<2)return [];const v=s.getDataRange().getValues(),h=v[0].map(String);return v.slice(1).filter(r=>r.some(x=>x!==""&&x!==null)).map(r=>{const o={};h.forEach((k,i)=>{if(k)o[k]=val_(r[i])});return o})}
 function val_(v){if(v instanceof Date)return v.toISOString();if(typeof v==="string"&&/^[\[{]/.test(v)){try{return JSON.parse(v)}catch(_){}}if(v==="TRUE")return true;if(v==="FALSE")return false;return v}
 function norm_(r,c){const o={...r};if(!o.id)o.id=o[c[1]]||o.event_id||o.user_id||o.schedule_id||"";return o}
-function create_(c,input){const s=ss_().getSheetByName(c[0]),h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0].map(String),o={...input};o[c[1]]=String(input.id||Utilities.getUuid());delete o.id;const now=new Date().toISOString();if(h.includes("created_date")&&!o.created_date)o.created_date=now;if(h.includes("created_at")&&!o.created_at)o.created_at=now;s.appendRow(h.map(k=>ser_(o[k])));return norm_(o,c)}
-function update_(c,id,input){if(!id)throw Error("id required");const s=ss_().getSheetByName(c[0]),v=s.getDataRange().getValues(),h=v[0].map(String),ix=h.indexOf(c[1]),ri=v.findIndex((r,i)=>i>0&&String(r[ix])===String(id));if(ri<0)throw Error("Record not found");Object.keys(input).forEach(k=>{if(k!=="id"&&h.includes(k))v[ri][h.indexOf(k)]=ser_(input[k])});s.getRange(ri+1,1,1,h.length).setValues([v[ri]]);return norm_(Object.fromEntries(h.map((k,i)=>[k,val_(v[ri][i])])),c)}
-function delete_(c,id){const s=ss_().getSheetByName(c[0]),v=s.getDataRange().getValues(),h=v[0].map(String),ix=h.indexOf(c[1]),ri=v.findIndex((r,i)=>i>0&&String(r[ix])===String(id));if(ri<0)return{deleted:false};s.deleteRow(ri+1);return{deleted:true,id}}
+// Serialize writes so two managers cannot overwrite each other's sheet updates.
+function withWriteLock_(work){
+ const lock=LockService.getScriptLock();
+ lock.waitLock(10000);
+ try{return work()}finally{lock.releaseLock()}
+}
+function create_(c,input){return withWriteLock_(()=>{
+ const s=ss_().getSheetByName(c[0]);
+ if(!s||s.getLastColumn()<1)throw Error("Sheet is not initialized: "+c[0]);
+ const h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0].map(String),o={...input};
+ o[c[1]]=String(input.id||Utilities.getUuid());delete o.id;
+ const now=new Date().toISOString();
+ if(h.includes("created_date")&&!o.created_date)o.created_date=now;
+ if(h.includes("created_at")&&!o.created_at)o.created_at=now;
+ s.appendRow(h.map(k=>ser_(o[k])));
+ return norm_(o,c);
+})}
+function update_(c,id,input){return withWriteLock_(()=>{
+ if(!id)throw Error("id required");
+ const s=ss_().getSheetByName(c[0]),v=s.getDataRange().getValues(),h=v[0].map(String),ix=h.indexOf(c[1]);
+ if(ix<0)throw Error("ID column is missing on "+c[0]);
+ const ri=v.findIndex((r,i)=>i>0&&String(r[ix])===String(id));
+ if(ri<0)throw Error("Record not found");
+ Object.keys(input).forEach(k=>{if(k!=="id"&&h.includes(k))v[ri][h.indexOf(k)]=ser_(input[k])});
+ s.getRange(ri+1,1,1,h.length).setValues([v[ri]]);
+ return norm_(Object.fromEntries(h.map((k,i)=>[k,val_(v[ri][i])])),c);
+})}
+function delete_(c,id){return withWriteLock_(()=>{
+ if(!id)throw Error("id required");
+ const s=ss_().getSheetByName(c[0]),v=s.getDataRange().getValues(),h=v[0].map(String),ix=h.indexOf(c[1]);
+ if(ix<0)throw Error("ID column is missing on "+c[0]);
+ const ri=v.findIndex((r,i)=>i>0&&String(r[ix])===String(id));
+ if(ri<0)return{deleted:false};
+ s.deleteRow(ri+1);
+ return{deleted:true,id};
+})}
 function ser_(v){return v==null?"":typeof v==="object"?JSON.stringify(v):v}
 function listLegacyEvents_(){return read_("Events").map(r=>({...r,id:r.id||r.event_id||"",name:r.name||r.event_name||"",start_date:r.start_date||r.event_date||"",venue_name:r.venue_name||r.location||"",status:r.status||"planning"}))}
 function createLegacyEvent_(i){const s=ss_().getSheetByName("Events"),h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0].map(String),id=Utilities.getUuid(),now=new Date().toISOString(),o={id,event_id:id,name:i.name||i.event_name||"",event_name:i.name||i.event_name||"",start_date:i.start_date||i.event_date||"",event_date:i.start_date||i.event_date||"",venue_name:i.venue_name||i.location||"",location:i.venue_name||i.location||"",status:i.status||"planning",created_date:now,created_at:now};s.appendRow(h.map(k=>ser_(o[k])));return o}
