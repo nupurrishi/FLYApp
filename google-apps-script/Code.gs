@@ -65,6 +65,9 @@ function doGet(e){const p=e&&e.parameter||{},a=String(p.action||"health");if(a==
  return out_({ok:false,error:"Unknown action"});
  }catch(err){return out_({ok:false,error:String(err.message||err)})}}
 function doPost(e){let b;try{b=JSON.parse(e.postData.contents||"{}")}catch(_){return out_({ok:false,error:"Invalid JSON"})}if(!auth_(b.key))return out_({ok:false,error:"Unauthorized"});try{
+ if(b.action==="listEvents")return out_({ok:true,data:listLegacyEvents_()});
+ if(b.action==="listSchedules")return out_({ok:true,data:read_("Schedules").filter(r=>!b.event_id||String(r.event_id)===String(b.event_id))});
+ if(b.action==="listRecords"){const c=cfg_(b.entity),rows=read_(c[0]).map(r=>norm_(r,c));return out_({ok:true,data:rows.filter(r=>!b.event_id||!r.event_id||String(r.event_id)===String(b.event_id))})}
  if(b.action==="createEvent")return out_({ok:true,data:createLegacyEvent_(b.event||{})});
  const c=cfg_(b.entity);
  if(b.action==="createRecord")return out_({ok:true,data:create_(c,b.record||{})});
