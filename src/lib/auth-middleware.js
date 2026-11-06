@@ -1,46 +1,79 @@
-import { createClientFromRequest, getAccessToken } from "@base44/sdk";
+import { createClient } from "@supabase/supabase-js";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest, setResponseStatus } from "@tanstack/react-start/server";
+import { env } from "cloudflare:workers";
+import { supabase } from "@/lib/supabase";
+import { createSheetsService } from "@/lib/sheets-entity-adapter.server";
 
-// Both middlewares hand handlers the same lazy `context.getBase44()`: a
-// function, not the client, because the client needs the platform headers and
-// a handler that never touches Base44 must still answer without them. The
-// platform sets those headers on every request that reaches the server; a
-// visitor's Authorization header makes the client act as that visitor.
-const withGetBase44 = (next, request = getRequest()) => {
-  let client;
-  return next({ context: { getBase44: () => (client ??= createClientFromRequest(request)) } });
-};
+const ALLOWED_ROLES = ["model", "designer", "admin"];
 
-// Applied to every server function by src/start.js: sends the visitor's Base44
-// access token with the call so `context.getBase44()` acts as the visitor (entity
-// access rules apply). Anonymous visitors send nothing and get an anonymous client.
+async function resolveUser(request) {
+  const authorization = request.headers.get("authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!token) return null;
+
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+  const key = env.SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) throw new Error("Supabase server configuration is missing.");
+
+  const client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { data: { user: authUser }, error } = await client.auth.getUser(token);
+  if (error || !authUser) return null;
+
+  const { data: profile, error: profileError } = await client
+    .from("profiles").select("id,email,full_name,role").eq("id", authUser.id).maybeSingle();
+  if (profileError) throw profileError;
+  if (!profile || !ALLOWED_ROLES.includes(profile.role)) return null;
+  return { ...profile, id: authUser.id, email: profile.email || authUser.email };
+}
+
+function withSheetsContext(next, request) {
+  let servicePromise;
+  const getBase44 = () => {
+    if (!servicePromise) {
+      servicePromise = resolveUser(request).then((user) => {
+        if (!user) throw Object.assign(new Error("Please sign in to continue"), { status: 401 });
+        return createSheetsService(user);
+      });
+    }
+    // The old code expects a synchronous client facade, so expose lazy async methods.
+    return createLazyFacade(() => servicePromise);
+  };
+  return next({ context: { getBase44 } });
+}
+
+function createLazyFacade(getService) {
+  const entityNames = ["Event","EventMember","ScheduleItem","Collection","Look","LookAssignment","HairMakeup","ShowSegment","Announcement","Notification","ReadinessTask","AuditLog","DesignerProfile","Opportunity","Application","User"];
+  const facade = { auth: { me: async () => (await getService()).auth.me() }, entities: {} };
+  for (const name of entityNames) {
+    facade.entities[name] = {};
+    for (const method of ["list","filter","get","create","bulkCreate","update","delete","deleteMany"]) {
+      facade.entities[name][method] = (...args) => getService().then((service) => service.entities[name][method](...args));
+    }
+  }
+  facade.asServiceRole = { entities: facade.entities };
+  return facade;
+}
+
 export const authMiddleware = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
-    const token = typeof window === "undefined" ? null : getAccessToken();
-    return next({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const { data: { session } } = await supabase.auth.getSession();
+    return next({ headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} });
   })
-  .server(({ next }) => withGetBase44(next));
+  .server(({ next }) => withSheetsContext(next, getRequest()));
 
-// Applied to every request by src/start.js, so a server route handler
-// (`server.handlers`) receives the same `context.getBase44()` as a server function.
 export const base44RequestMiddleware = createMiddleware({ type: "request" }).server(({ next, request }) =>
-  withGetBase44(next, request),
+  withSheetsContext(next, request),
 );
 
-// Only an auth rejection means "not signed in"; outages and rate limits propagate as themselves.
-const currentUser = (context) =>
-  context
-    .getBase44()
-    .auth.me()
-    .catch((error) => {
-      if (error?.status === 401 || error?.status === 403) return null;
-      throw error;
-    });
+const currentUser = (context) => context.getBase44().auth.me().catch((error) => {
+  if (error?.status === 401 || error?.status === 403) return null;
+  throw error;
+});
 
-// Neither middleware authenticates anyone. Add this to a server function that
-// needs a signed-in caller; it rejects anonymous callers and sets `context.user`:
-//   createServerFn().middleware([requireUser]).handler(({ context }) => context.user.id)
 export const requireUser = createMiddleware({ type: "function" }).server(async ({ next, context }) => {
   const user = await currentUser(context);
   if (!user) {
@@ -50,9 +83,6 @@ export const requireUser = createMiddleware({ type: "function" }).server(async (
   return next({ context: { user } });
 });
 
-// The same for a server route: `server: { middleware: [requireUserRoute], handlers }` answers
-// anonymous callers with 401 and sets `context.user`. Only on src/routes/api/* files: a route's
-// middleware also runs for every route under it, and page navigations carry no token.
 export const requireUserRoute = createMiddleware({ type: "request" }).server(async ({ next, context }) => {
   const user = await currentUser(context);
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
