@@ -2,15 +2,16 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
+import { AuthError, AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 const labelClass = "label-eyebrow text-black/45";
 
-// The /login page. ?returnTo= (or the platform's ?from_url=) is where the visitor
-// goes after signing in — the login gate and the MCP consent page send people here with it.
+// Email-and-password sign-in for accounts provisioned by the production team.
+// Authentication is still handled by the current Base44 provider until the
+// server-side replacement is implemented and configured.
 export function LoginPage() {
   const returnTo = safeReturnTo();
   const [email, setEmail] = useState("");
@@ -29,7 +30,6 @@ export function LoginPage() {
     setBusy(true);
     try {
       await base44.auth.loginViaEmailPassword(email.trim(), password);
-      // A hard redirect: the app re-initializes with the new session.
       window.location.href = returnTo;
     } catch (err) {
       setError(err?.message || "We couldn't sign you in. Check your email and password.");
@@ -42,8 +42,6 @@ export function LoginPage() {
       title="Sign in to your workspace"
       subtitle="Access your call times, fittings, looks and show-day information."
     >
-      <GoogleButton returnTo={returnTo} />
-      <OrDivider />
       <AuthError>{error}</AuthError>
       <form onSubmit={submit} className="space-y-5" noValidate>
         <div className="space-y-2">
@@ -80,7 +78,7 @@ export function LoginPage() {
               id="login-password"
               type={visible ? "text" : "password"}
               autoComplete="current-password"
-              placeholder="••••••••"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="h-12 rounded-none border-brand-line bg-white pr-12"
@@ -100,14 +98,8 @@ export function LoginPage() {
           Sign in
         </SubmitButton>
       </form>
-      <p className="mt-7 text-center text-sm text-black/55">
-        New to Fly Showcase?{" "}
-        <AuthLink to="/register" returnTo={returnTo} className="font-medium text-brand-purple hover:underline">
-          Create an account
-        </AuthLink>
-      </p>
-      <p className="mt-4 text-center text-[11px] leading-relaxed text-black/35">
-        Team members are added to events by the production team. Accounts have no event access until invited.
+      <p className="mt-5 text-center text-xs leading-relaxed text-black/50">
+        Your account is created by the production team. If you need access, contact your event administrator.
       </p>
     </AuthLayout>
   );
