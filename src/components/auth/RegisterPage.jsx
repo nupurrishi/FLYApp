@@ -107,7 +107,7 @@ export function RegisterPage() {
         <AuthLink to="/login" returnTo={returnTo}>Sign in</AuthLink>
       </p>
       <p className="mt-4 text-center text-xs leading-relaxed text-muted-foreground">
-        Manager and Admin access cannot be selected here. Those accounts are provisioned separately by the owner.
+        Admin accounts are created separately by the FLYApp owner and cannot be selected during public registration.
       </p>
     </AuthLayout>
   );
