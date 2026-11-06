@@ -1,30 +1,34 @@
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { createContext, useContext, useEffect, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
 import { currentUrl } from "@/lib/authReturnTo";
 
-/**
- * The visitor, resolved once per page load and cached in the router's QueryClient:
- * the login gate (src/components/auth/AuthGate.jsx) reads it with
- * `context.queryClient.ensureQueryData(authQuery)`, components with `useAuth()`.
- * Resolves to `{ user, error }`: an anonymous visitor (no token, or a 401/403) is `{ user: null, error: null }`.
- * Anything else, an outage (429, 503) or a request that never got an answer, rejects instead,
- * so it is never cached as "signed out" and the next read asks again.
- */
+const ALLOWED_ROLES = ["model", "designer", "admin"];
+
 export const authQuery = queryOptions({
   queryKey: ["auth", "me"],
   queryFn: async () => {
-    // No token means no session; /me could only answer 401.
-    if (!base44.auth.hasToken()) return { user: null, error: null };
-    try {
-      return { user: await base44.auth.me(), error: null };
-    } catch (err) {
-      if (err?.data?.extra_data?.reason === "user_not_registered") {
-        return { user: null, error: { type: "user_not_registered", message: "Not registered" } };
-      }
-      if (err?.status === 401 || err?.status === 403) return { user: null, error: null };
-      throw err;
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    if (authError || !authUser) return { user: null, error: null };
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, role")
+      .eq("id", authUser.id)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+    if (!profile || !ALLOWED_ROLES.includes(profile.role)) {
+      return {
+        user: null,
+        error: {
+          type: "user_not_registered",
+          message: "Your account profile is not ready. Contact the FLYApp team.",
+        },
+      };
     }
+
+    return { user: { ...profile, authUser }, error: null };
   },
   staleTime: Infinity,
   retry: false,
@@ -32,39 +36,39 @@ export const authQuery = queryOptions({
 
 const AuthContext = createContext(null);
 
-/**
- * Client-side session state. The server renders every page anonymously and the
- * query only runs in the browser after hydration, so the first client render
- * matches the server markup. Gate user-specific UI on `isLoadingAuth`.
- */
 export function AuthProvider({ children }) {
   const queryClient = useQueryClient();
   const { data, error, isPending } = useQuery(authQuery);
 
-  const value = useMemo(
-    () => ({
-      user: data?.user ?? null,
-      isAuthenticated: !!data?.user,
-      isLoadingAuth: isPending,
-      authError: data?.error ?? (error ? { type: "unknown", message: error.message ?? "Failed to load session" } : null),
-      refresh: () => queryClient.fetchQuery({ ...authQuery, staleTime: 0 }),
-      logout: () => {
-        queryClient.setQueryData(authQuery.queryKey, { user: null, error: null });
-        base44.auth.logout(window.location.origin);
-      },
-      // Full-page sign-in: /login with the current page as the way back. A hard
-      // navigation on purpose — on an app served behind the platform login the
-      // platform answers /login itself; an app with its own auth pages serves its /login route.
-      navigateToLogin: () => base44.auth.redirectToLogin(currentUrl()),
-    }),
-    [data, error, isPending, queryClient],
-  );
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      queryClient.invalidateQueries({ queryKey: authQuery.queryKey });
+    });
+    return () => subscription.unsubscribe();
+  }, [queryClient]);
+
+  const value = useMemo(() => ({
+    user: data?.user ?? null,
+    isAuthenticated: !!data?.user,
+    isLoadingAuth: isPending,
+    authError: data?.error ?? (error ? { type: "unknown", message: error.message ?? "Unable to load your account." } : null),
+    refresh: () => queryClient.fetchQuery({ ...authQuery, staleTime: 0 }),
+    logout: async () => {
+      await supabase.auth.signOut();
+      queryClient.setQueryData(authQuery.queryKey, { user: null, error: null });
+      window.location.assign("/login");
+    },
+    navigateToLogin: () => {
+      const returnTo = encodeURIComponent(currentUrl());
+      window.location.assign(`/login?returnTo=${returnTo}`);
+    },
+  }), [data, error, isPending, queryClient]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within <AuthProvider>");
+  return context;
 }

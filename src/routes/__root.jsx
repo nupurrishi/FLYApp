@@ -3,7 +3,6 @@ import { DefaultCatchBoundary } from "@/components/DefaultCatchBoundary";
 import { NotFound } from "@/components/NotFound";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/AuthContext";
-import { Base44Scripts } from "base44:document";
 import appCss from "@/index.css?url";
 
 export const Route = createRootRoute({
@@ -47,9 +46,7 @@ function RootDocument({ children }) {
         <HeadContent />
       </head>
       <body data-react-root="true">
-        {children}
-        <Base44Scripts />
-        <Scripts />
+        {children}        <Scripts />
       </body>
     </html>
   );

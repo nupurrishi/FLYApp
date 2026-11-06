@@ -1,5 +1,5 @@
 {
-  "name": "base44-tanstack-app",
+  "name": "flyapp",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -44,7 +44,7 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "@stripe/react-stripe-js": "^3.10.0",
     "@stripe/stripe-js": "^5.2.0",
-    "@tanstack/ai": "^0.54.0",
+    "@tanstack/ai": "^0.55.0",
     "@tanstack/ai-openai": "^0.22.6",
     "@tanstack/ai-react": "^0.24.1",
     "@tanstack/react-query": "^5.84.1",
@@ -80,7 +80,8 @@
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.171.0",
     "vaul": "^1.1.2",
-    "zod": "~4.4.3"
+    "zod": "~4.4.3",
+    "@supabase/supabase-js": "^2.112.3"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.54.6",
