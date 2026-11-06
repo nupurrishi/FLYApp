@@ -34,7 +34,7 @@ export async function membershipFor(service, user, eventId) {
   const rows = asItems(
     await service.entities.EventMember.filter({ event_id: eventId, user_email: user.email }),
   );
-  return rows[0] || null;
+  return rows.find((row) => row.status !== "removed") || null;
 }
 
 // Any signed-in participant of the event (or an admin).
